@@ -7,6 +7,7 @@
 #define LED_G 5        // Pin LED verde
 #define LED_R 4        // Pin LED rosso
 #define LED_B 3        // Pin LED blu che simula l'apertura della porta
+#define BUZZER 10       // Definisci il pin per il buzzer
 #define ACCESS_DELAY 2000
 
 void setup() {
@@ -16,7 +17,9 @@ void setup() {
     pinMode(LED_G, OUTPUT);
     pinMode(LED_R, OUTPUT);
     pinMode(LED_B, OUTPUT);
+    pinMode(BUZZER, OUTPUT);
     digitalWrite(LED_B, LOW); // Inizialmente la porta è chiusa (LED blu spento)
+    digitalWrite(BUZZER, LOW);
     Serial.println("Sistema pronto...");
 }
 
@@ -42,23 +45,35 @@ int check_proximity() { // Funzione per controllare lo status della porta, se ap
     }
 }
 
+void buzz(int duration) {
+    digitalWrite(BUZZER, HIGH);
+    delay(duration);
+    digitalWrite(BUZZER, LOW);
+}
+
+void send_packet(uint8_t message_type, String data) { // Funzione per inviare pacchetti strutturati
+    Serial.write(0xFB); // Inizio pacchetto
+    Serial.write(message_type); // Tipo di messaggio
+    Serial.print(data); // Dati
+    Serial.write(0xFA); // Fine pacchetto
+}
+
 void check_for_remote_input() { // Funzione che riceve l'input di apertura da remoto tramite USB seriale
     if (Serial.available() > 0) {
         String a = Serial.readString(); // Ricevo il pacchetto dal bridge
         Serial.print("Valore ricevuto: " + a);
         int b = a.toInt();
         if (b == 1) { // Apri serratura (simulata con LED blu)
+            buzz(200); // Buzzer suona per 200ms
             digitalWrite(LED_B, HIGH); // Simula apertura porta
             digitalWrite(LED_G, HIGH);
             digitalWrite(LED_R, LOW);
             delay(10); // Aspetto per vedere se la porta viene chiusa
             if (check_proximity()) {  // Se la porta è aperta
-                Serial.write(0xfb); // Inizio pacchetto
-                Serial.print("001"); // Porta aperta
-                Serial.write(0xfa); // Fine pacchetto
+                send_packet(0x01, "001"); // Porta aperta
                 // Devo comunicare al bridge che la porta è aperta
                 while (check_proximity()) { // Finché la porta resta aperta
-                    delay(10); // Controllo ogni 10 secondi
+                    delay(10000); // Controllo ogni 10 secondi
                 }
             }
             // Richiudo la porta (simulata con LED blu)..
@@ -66,11 +81,10 @@ void check_for_remote_input() { // Funzione che riceve l'input di apertura da re
             digitalWrite(LED_B, LOW);  // Chiudo la porta simulata
             digitalWrite(LED_G, LOW);
             delay(ACCESS_DELAY);
-            Serial.write(0xfb); // Inizio pacchetto
-            Serial.print("000"); // Porta chiusa
-            Serial.write(0xfa); // Fine pacchetto
+            send_packet(0x01, "000"); // Porta chiusa
             // Comunico di nuovo al bridge che la porta è chiusa
         } else if (b == 0) {
+            buzz(100); // Buzzer suona per 100ms
             digitalWrite(LED_B, LOW); // Chiudo la porta simulata
             digitalWrite(LED_G, LOW);
         }
