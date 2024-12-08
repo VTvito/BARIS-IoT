@@ -1,20 +1,21 @@
 #include <SPI.h>
 #include "Arduino.h"
 
-// Definisco i pin per i vari sensori e attuatori
-#define ECHO_PIN 13     // Sensore di prossimità (Echo)
-#define TRIGGER_PIN 12  // Sensore di prossimità (Trigger)
-#define BUZZER 10      // Pin per il buzzer
-#define LED_VERDE 5    // Pin LED verde
-#define LED_ROSSO 4    // Pin LED rosso
-#define LED_BLU 3      // Pin LED blu che simula l'apertura della porta
-#define ACCESS_DELAY 2000
-
-// Soglia di distanza in cm per determinare se la porta è aperta
+// Pin
+#define ECHO_PIN 13
+#define TRIGGER_PIN 12
+#define BUZZER 10
+#define LED_VERDE 5
+#define LED_ROSSO 4
+#define LED_BLU 3
 #define DISTANCE_THRESHOLD 10
 
+// Stato del sistema
+bool lock = true;        // Serratura inizialmente bloccata
+bool door_open = false;  // Porta inizialmente chiusa
+
 void setup() {
-    Serial.begin(9600);   // Inizializzo la porta seriale per debugging e comunicazione con il bridge
+    Serial.begin(9600);
     pinMode(TRIGGER_PIN, OUTPUT);
     pinMode(ECHO_PIN, INPUT);
     pinMode(LED_VERDE, OUTPUT);
@@ -22,37 +23,36 @@ void setup() {
     pinMode(LED_BLU, OUTPUT);
     pinMode(BUZZER, OUTPUT);
 
-    // Inizialmente la serratura è bloccata e la porta è chiusa
-    digitalWrite(LED_BLU, LOW);   // Porta chiusa
-    digitalWrite(LED_VERDE, LOW); // Serratura sbloccata (spento)
-    digitalWrite(LED_ROSSO, HIGH); // Serratura bloccata
-    digitalWrite(BUZZER, LOW);    // Buzzer spento
+    // Serratura chiusa e porta chiusa
+    digitalWrite(LED_BLU, LOW);
+    digitalWrite(LED_VERDE, LOW);
+    digitalWrite(LED_ROSSO, HIGH);
+    digitalWrite(BUZZER, LOW);
 
     Serial.println("Sistema pronto...");
 }
 
-int check_proximity() { // Funzione per controllare lo stato della porta, se aperta o chiusa
-    digitalWrite(TRIGGER_PIN, LOW); // Reset trigger
+int check_proximity() {
+    digitalWrite(TRIGGER_PIN, LOW);
     delayMicroseconds(2);
-    digitalWrite(TRIGGER_PIN, HIGH); // Invia impulso di 10 microsec su Trig
+    digitalWrite(TRIGGER_PIN, HIGH);
     delayMicroseconds(10);
     digitalWrite(TRIGGER_PIN, LOW);
 
-    long durata = pulseIn(ECHO_PIN, HIGH); // Misura la durata dell'impulso ALTO su Echo
-
-    if (durata == 0) { // Nessun eco ricevuto
+    long durata = pulseIn(ECHO_PIN, HIGH);
+    if (durata == 0) {
         Serial.println("Errore nella lettura del sensore.");
-        return -1; // Errore nella lettura
+        return -1;
     }
 
-    long distanza = (durata * 0.0343) / 2; // Calcolo distanza in cm
+    float distanza = (durata * 0.0343) / 2;
     Serial.print("Distanza misurata: ");
     Serial.println(distanza);
 
     if (distanza > DISTANCE_THRESHOLD) {
-        return 1; // PORTA APERTA
+        return 1; // porta aperta
     } else {
-        return 0; // PORTA CHIUSA
+        return 0; // porta chiusa
     }
 }
 
@@ -62,52 +62,83 @@ void buzz(int duration) {
     digitalWrite(BUZZER, LOW);
 }
 
-void send_packet(uint8_t message_type, String data) { // Funzione per inviare pacchetti strutturati
-    Serial.write(0xFB); // Inizio pacchetto
-    Serial.write(message_type); // Tipo di messaggio
-    Serial.print(data); // Dati
-    Serial.write(0xFA); // Fine pacchetto
+void send_packet(const char* message) {
+    Serial.write(0xFB);  // Inizio pacchetto
+    Serial.print(message);  // Messaggio
+    Serial.write(0xFA);  // Fine pacchetto
 }
 
-void alert_alarm() { // Funzione per attivare l'allarme
-    while (1) { // Ciclo infinito per mantenere l'allarme attivo
-        digitalWrite(BUZZER, HIGH);
-        delay(500);
-        digitalWrite(BUZZER, LOW);
-        delay(500);
+void unlock_procedure() {
+    buzz(200);
+    lock = false; // Serratura sbloccata
+    digitalWrite(LED_VERDE, HIGH);
+    digitalWrite(LED_ROSSO, LOW);
+
+    Serial.println("Serratura sbloccata.");
+
+    int consecutive_closed = 0;
+    while (true) {
+        delay(3000); // Controllo ogni 3 secondi
+        int door_status = check_proximity();
+
+        if (door_status == 1) {
+            // Porta aperta
+            if (!door_open) {
+                door_open = true;
+                digitalWrite(LED_BLU, HIGH);
+                send_packet("001"); // Notifica porta aperta
+                Serial.println("Porta aperta.");
+            }
+            consecutive_closed = 0; // Reset contatore
+        } else if (door_status == 0) {
+            // Porta chiusa
+            if (door_open) {
+                consecutive_closed++;
+                Serial.print("Porta chiusa, ciclo: ");
+                Serial.println(consecutive_closed);
+                if (consecutive_closed >= 3) {
+                    door_open = false;
+                    lock = true; // Serratura torna chiusa
+                    digitalWrite(LED_BLU, LOW);
+                    digitalWrite(LED_VERDE, LOW);
+                    digitalWrite(LED_ROSSO, HIGH);
+                    send_packet("000"); // Notifica porta chiusa e serratura bloccata
+                    Serial.println("Porta chiusa e serratura bloccata.");
+                    break; // Esci dalla procedura di unlock
+                }
+            }
+        } else {
+            Serial.println("Errore nella lettura del sensore.");
+        }
     }
 }
 
-void check_for_remote_input() { // Funzione che riceve l'input di apertura da remoto tramite USB seriale
-    if (Serial.available() > 0) {
-        String a = Serial.readString(); // Ricevo il pacchetto dal bridge
-        Serial.print("Valore ricevuto: " + a);
-        int b = a.toInt();
-        if (b == 1) { // Apri serratura (sbloccata)
-            buzz(200); // Buzzer suona per 200ms
-            digitalWrite(LED_ROSSO, LOW); // Serratura sbloccata
-            digitalWrite(LED_VERDE, HIGH); // Serratura sbloccata
-            digitalWrite(LED_BLU, HIGH); // Simula apertura porta
-            delay(10); // Aspetto per vedere se la porta viene chiusa
-            int door_status = check_proximity();  // Verifica lo stato reale della porta
+void lock_procedure() {
+    buzz(100);
+    lock = true; // Serratura bloccata
+    digitalWrite(LED_ROSSO, HIGH);
+    digitalWrite(LED_VERDE, LOW);
+    if (!door_open) {
+        digitalWrite(LED_BLU, LOW); // Spegni LED blu solo se porta chiusa
+    }
 
-            if (door_status == 1) {  // Se la porta è aperta
-                send_packet(0x01, "001"); // Porta aperta
-                // Devo comunicare al bridge che la porta è aperta
-                while (door_status == 1) { // Finché la porta resta aperta
-                    delay(5000); // Controllo ogni 5 secondi
-                    door_status = check_proximity();
-                }
-            } else if (door_status == 0) { // Porta chiusa
-                send_packet(0x01, "000"); // Porta chiusa
-            } else { // Errore nella lettura del sensore
-                Serial.println("Errore nella lettura del sensore di prossimità.");
-            }
-        } else if (b == 0) { // Blocca serratura
-            buzz(100); // Buzzer suona per 100ms
-            digitalWrite(LED_ROSSO, HIGH); // Serratura bloccata
-            digitalWrite(LED_VERDE, LOW); // Serratura bloccata
-            digitalWrite(LED_BLU, LOW); // Porta chiusa
+    Serial.println("Serratura bloccata.");
+    send_packet("000"); // Notifica porta chiusa
+}
+
+void check_for_remote_input() {
+    if (Serial.available() > 0) {
+        String command = Serial.readString();
+        command.trim();
+        Serial.print("Valore ricevuto: ");
+        Serial.println(command);
+
+        if (command == "1") {
+            // Sblocco serratura
+            unlock_procedure();
+        } else if (command == "0") {
+            // Blocco serratura
+            lock_procedure();
         }
     }
 }
