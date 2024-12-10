@@ -20,30 +20,47 @@ class _UserDashboardState extends State<UserDashboard> {
   }
 
   Future<void> loadUserDevices() async {
-    if (user == null) return;
-    DocumentSnapshot doc = await FirebaseFirestore.instance.collection('users').doc(user!.uid).get();
-    if (doc.exists) {
-      var data = doc.data() as Map<String, dynamic>;
-      List devices = data['devices'] ?? [];
-      userDevices = devices.cast<String>();
-      await loadDevicesNames(); // Carichiamo i nomi dei device
-      setState(() {
-        if (userDevices.isNotEmpty) {
-          if (userDevices.length == 1) {
-            selectedUserDeviceId = userDevices.first;
-          } else {
-            selectedUserDeviceId = null;
-          }
-        }
-      });
-    } else {
-      // Nessun documento utente trovato
-      setState(() {
-        userDevices = [];
-        selectedUserDeviceId = null;
-      });
+  if (user == null) return;
+  DocumentSnapshot doc = await FirebaseFirestore.instance.collection('users').doc(user!.uid).get();
+  if (doc.exists) {
+    var data = doc.data() as Map<String, dynamic>;
+    List devices = data['devices'] ?? [];
+    userDevices = devices.cast<String>();
+
+    await loadDevicesNames();
+
+    // Filtra i devices su cui l'utente ha prenotazioni
+    List<String> filteredDevices = [];
+    for (var devId in userDevices) {
+      var bookingsSnap = await FirebaseFirestore.instance
+          .collection('devices')
+          .doc(devId)
+          .collection('prenotazioni')
+          .where('user_id', isEqualTo: user!.uid)
+          .get();
+
+      if (bookingsSnap.docs.isNotEmpty) {
+        filteredDevices.add(devId);
+      }
     }
+    userDevices = filteredDevices;
+
+    setState(() {
+      if (userDevices.isNotEmpty) {
+        if (userDevices.length == 1) {
+          selectedUserDeviceId = userDevices.first;
+        } else {
+          selectedUserDeviceId = null;
+        }
+      }
+    });
+  } else {
+    setState(() {
+      userDevices = [];
+      selectedUserDeviceId = null;
+    });
   }
+}
 
   Future<void> loadDevicesNames() async {
     deviceIdToName.clear();
