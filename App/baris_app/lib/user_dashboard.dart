@@ -8,8 +8,56 @@ class UserDashboard extends StatefulWidget {
 }
 
 class _UserDashboardState extends State<UserDashboard> {
-  final deviceId = 'device_1'; 
   User? user = FirebaseAuth.instance.currentUser;
+  List<String> userDevices = [];
+  Map<String, String> deviceIdToName = {};
+  String? selectedUserDeviceId; // Device selezionato dall'utente
+
+  @override
+  void initState() {
+    super.initState();
+    loadUserDevices();
+  }
+
+  Future<void> loadUserDevices() async {
+    if (user == null) return;
+    DocumentSnapshot doc = await FirebaseFirestore.instance.collection('users').doc(user!.uid).get();
+    if (doc.exists) {
+      var data = doc.data() as Map<String, dynamic>;
+      List devices = data['devices'] ?? [];
+      userDevices = devices.cast<String>();
+      await loadDevicesNames(); // Carichiamo i nomi dei device
+      setState(() {
+        if (userDevices.isNotEmpty) {
+          if (userDevices.length == 1) {
+            selectedUserDeviceId = userDevices.first;
+          } else {
+            selectedUserDeviceId = null;
+          }
+        }
+      });
+    } else {
+      // Nessun documento utente trovato
+      setState(() {
+        userDevices = [];
+        selectedUserDeviceId = null;
+      });
+    }
+  }
+
+  Future<void> loadDevicesNames() async {
+    deviceIdToName.clear();
+    for (var devId in userDevices) {
+      DocumentSnapshot devDoc = await FirebaseFirestore.instance.collection('devices').doc(devId).get();
+      if (devDoc.exists) {
+        var devData = devDoc.data() as Map<String, dynamic>;
+        String name = devData['name'] ?? devId;
+        deviceIdToName[devId] = name;
+      } else {
+        deviceIdToName[devId] = devId; // fallback
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,39 +72,7 @@ class _UserDashboardState extends State<UserDashboard> {
       appBar: AppBar(
         title: Text('Dashboard Utente'),
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('devices')
-            .doc(deviceId)
-            .collection('prenotazioni')
-            .where('user_id', isEqualTo: user!.uid)
-            .orderBy('start_time', descending: false)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return Center(child: CircularProgressIndicator());
-          }
-
-          var bookings = snapshot.data!.docs;
-
-          if (bookings.isEmpty) {
-            return Center(child: Text('Nessuna prenotazione'));
-          }
-
-          return ListView.builder(
-            itemCount: bookings.length,
-            itemBuilder: (context, index) {
-              var data = bookings[index].data() as Map<String, dynamic>;
-              DateTime start = DateTime.parse(data['start_time'] as String);
-              DateTime end = DateTime.parse(data['end_time'] as String);
-              return ListTile(
-                title: Text('Prenotazione: ${bookings[index].id}'),
-                subtitle: Text('Dal ${start.toLocal()} al ${end.toLocal()}'),
-              );
-            },
-          );
-        },
-      ),
+      body: buildUserInterface(),
       floatingActionButton: FloatingActionButton(
         onPressed: checkAndUnlock,
         child: Icon(Icons.lock_open),
@@ -64,12 +80,125 @@ class _UserDashboardState extends State<UserDashboard> {
     );
   }
 
+  Widget buildUserInterface() {
+    if (userDevices.isEmpty) {
+      return Center(child: Text('Nessun dispositivo associato. Contatta l\'admin per una prenotazione.'));
+    }
+
+    if (userDevices.length > 1) {
+      // Se più device, mostra dropdown con i nomi dei device
+      List<DropdownMenuItem<String>> items = userDevices.map((d) {
+        String deviceName = deviceIdToName[d] ?? d;
+        return DropdownMenuItem(value: d, child: Text(deviceName));
+      }).toList();
+
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Text('Seleziona dispositivo: '),
+                SizedBox(width: 10),
+                DropdownButton<String>(
+                  value: selectedUserDeviceId,
+                  hint: Text('Scegli un device'),
+                  items: items,
+                  onChanged: (val) {
+                    setState(() {
+                      selectedUserDeviceId = val;
+                    });
+                  },
+                )
+              ],
+            ),
+          ),
+          Expanded(
+            child: selectedUserDeviceId == null
+                ? Center(child: Text('Seleziona un dispositivo per vedere le prenotazioni'))
+                : buildPrenotazioniList(selectedUserDeviceId!),
+          )
+        ],
+      );
+    } else {
+      // Un solo device
+      String singleDeviceId = userDevices.first;
+      String deviceName = deviceIdToName[singleDeviceId] ?? singleDeviceId;
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text('Dispositivo: $deviceName'),
+          ),
+          Expanded(child: buildPrenotazioniList(singleDeviceId)),
+        ],
+      );
+    }
+  }
+
+  Widget buildPrenotazioniList(String deviceId) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('devices')
+          .doc(deviceId)
+          .collection('prenotazioni')
+          .where('user_id', isEqualTo: user!.uid)
+          .orderBy('start_time', descending: false)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Errore: ${snapshot.error}'));
+        }
+        if (!snapshot.hasData) {
+          return Center(child: Text('Nessun dato'));
+        }
+
+        var bookings = snapshot.data!.docs;
+        if (bookings.isEmpty) {
+          return Center(child: Text('Nessuna prenotazione'));
+        }
+
+        return ListView.builder(
+          itemCount: bookings.length,
+          itemBuilder: (context, index) {
+            var data = bookings[index].data() as Map<String, dynamic>;
+            DateTime start = DateTime.parse(data['start_time'] as String);
+            DateTime end = DateTime.parse(data['end_time'] as String);
+            return ListTile(
+              title: Text('Prenotazione: ${bookings[index].id}'),
+              subtitle: Text('Dal ${start.toLocal()} al ${end.toLocal()}'),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> checkAndUnlock() async {
-    if (user == null) return;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Non sei loggato.')));
+      return;
+    }
+
+    String? deviceId;
+    if (userDevices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Nessun dispositivo associato.')));
+      return;
+    } else if (userDevices.length == 1) {
+      deviceId = userDevices.first;
+    } else {
+      if (selectedUserDeviceId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Seleziona un dispositivo.')));
+        return;
+      }
+      deviceId = selectedUserDeviceId;
+    }
+
     final now = DateTime.now();
 
-    // Leggi prenotazioni correnti non dal stream, ma con una query diretta,
-    // così hai i dati sincroni al momento del clic.
     var bookingsSnapshot = await FirebaseFirestore.instance
         .collection('devices')
         .doc(deviceId)
