@@ -76,12 +76,16 @@ class Bridge:
                     logging.info(f"Pacchetto ricevuto: {data_str}")
 
                     if data_str == "001":
-                        self.update_firestore(True, False)
+                        # Porta aperta
+                        self.update_device_state(porta_aperta=True, lock=False)
                     elif data_str == "000":
-                        self.update_firestore(False, True)
+                        # Porta chiusa e serratura bloccata
+                        self.update_device_state(porta_aperta=False, lock=True)
                     elif data_str == "EFF":
+                        # Effrazione -> allarme attivato
                         self.update_alarm(True)
                     elif data_str == "D":
+                        # Disattiva allarme
                         self.update_alarm(False)
                     else:
                         logging.error(f"Messaggio sconosciuto: {data_str}")
@@ -92,22 +96,26 @@ class Bridge:
                 logging.error(f"Errore lettura pacchetto: {e}")
                 time.sleep(1)
 
-    def update_firestore(self, porta_aperta, lock):
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        doc = self.db.collection("dispositivi").document(self.device_id)
+    def update_device_state(self, porta_aperta: bool, lock: bool):
+        timestamp = datetime.utcnow().isoformat()
+        doc = self.db.collection("devices").document(self.device_id)
         doc.update({
             "porta_aperta": porta_aperta,
             "lock": lock,
             "last_access": timestamp
         })
         stato_str = "aperta" if porta_aperta else "chiusa"
-        doc.collection("access_logs").add({"timestamp": timestamp, "stato": stato_str})
+        doc.collection("access_logs").add({
+            "timestamp": timestamp,
+            "stato": stato_str,
+            "user_id": None  # Non sappiamo chi ha aperto, a meno che Arduino non lo indichi o l'app
+        })
         self.lock_state = lock
         self.porta_aperta_state = porta_aperta
-        logging.info("Aggiornato Firestore con stato corrente.")
+        logging.info("Aggiornato Firestore con stato corrente del dispositivo.")
 
     def update_alarm(self, stato_allarme):
-        doc = self.db.collection("dispositivi").document(self.device_id)
+        doc = self.db.collection("devices").document(self.device_id)
         doc.update({"allarme": stato_allarme})
         self.allarme_state = stato_allarme
         if stato_allarme:
@@ -115,19 +123,21 @@ class Bridge:
         else:
             logging.info("Allarme disattivato su Firestore.")
 
-    def write_to_firebase(self, ssid):
+    def write_to_firebase(self, device_name):
         try:
-            doc = self.db.collection("dispositivi").document(ssid)
+            doc = self.db.collection("devices").document(device_name)
+            # Inizializzazione del dispositivo con i campi previsti
             doc.set({
-                "SSID": ssid,
+                "name": device_name,
                 "lock": True,
                 "porta_aperta": False,
                 "last_access": "Never",
-                "latitude": "",
-                "longitude": "",
-                "allarme": False
+                "latitude": 45.4642,      # Esempio, cambiare con la posizione reale
+                "longitude": 9.1900,     # Esempio
+                "allarme": False,
+                "maintenance_mode": False
             })
-            logging.info(f"Document {ssid} inizializzato in Firestore.")
+            logging.info(f"Document {device_name} inizializzato in Firestore.")
             self.lock_state = True
             self.porta_aperta_state = False
             self.allarme_state = False
@@ -137,35 +147,36 @@ class Bridge:
 
     def read_from_firebase(self):
         try:
-            doc_ref = self.db.collection("dispositivi").document(self.device_id)
+            doc_ref = self.db.collection("devices").document(self.device_id)
             doc = doc_ref.get()
             if doc.exists:
                 data = doc.to_dict()
                 logging.info(f'Document data: {data}')
-                new_lock_state = data.get("lock")
-                new_porta_aperta_state = data.get("porta_aperta")
-                new_allarme_state = data.get("allarme")
+                new_lock_state = data.get("lock", True)
+                new_porta_aperta_state = data.get("porta_aperta", False)
+                new_allarme_state = data.get("allarme", False)
 
                 # Controlla se lo stato della serratura è cambiato
                 if self.lock_state != new_lock_state:
                     self.lock_state = new_lock_state
                     if new_lock_state:
-                        logging.info("Invio comando blocco serratura.")
+                        logging.info("Invio comando blocco serratura ad Arduino.")
                         self.ser.write("0".encode())
                     else:
-                        logging.info("Invio comando sblocco serratura.")
+                        logging.info("Invio comando sblocco serratura ad Arduino.")
                         self.ser.write("1".encode())
 
-                # Se allarme su Firestore è false ma allarme_state è true, disattiva allarme
+                # Controlla lo stato dell'allarme
                 if self.allarme_state and not new_allarme_state:
-                    logging.info("Disattivazione allarme da Firestore.")
+                    # Disattivazione allarme da Firestore
+                    logging.info("Disattivazione allarme da Firestore - invio comando 'D' ad Arduino.")
                     self.ser.write("D".encode())
                     self.allarme_state = new_allarme_state
                 elif not self.allarme_state and new_allarme_state:
-                    # In questo scenario l'allarme viene attivato solo da Arduino (EFF)
+                    # L'allarme è stato attivato - potrebbe essere stato attivato localmente da Arduino (EFF)
                     self.allarme_state = new_allarme_state
             else:
-                logging.warning("Nessun documento trovato!")
+                logging.warning("Nessun documento trovato per il dispositivo!")
         except Exception as e:
             logging.error(f"Errore nella lettura da Firestore: {e}")
 
@@ -181,9 +192,11 @@ class Bridge:
 
 
 if __name__ == '__main__':
+    # Inizializza il bridge
     bridge = Bridge(port=PORTNAME, device_id=DEVICE_ID)
     bridge.setup_serial()
 
+    # Inizializza Firebase
     try:
         cred = credentials.Certificate(FIREBASE_CREDENTIALS)
         firebase_admin.initialize_app(cred)
@@ -193,11 +206,14 @@ if __name__ == '__main__':
         logging.error(f"Errore nell'inizializzazione di Firebase: {e}")
         exit()
 
+    # Ottiene l'SSID (che funge da device_id) e scrive la config di base
     ssid = bridge.get_ssid()
     bridge.write_to_firebase(ssid)
 
+    # Avvia il thread per ascoltare i pacchetti da Arduino
     bridge.start_remote_thread()
 
+    # Loop principale: legge periodicamente da Firestore per aggiornare Arduino
     try:
         while bridge.running:
             bridge.read_from_firebase()
