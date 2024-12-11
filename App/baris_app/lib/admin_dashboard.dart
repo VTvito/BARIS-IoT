@@ -14,7 +14,7 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -27,6 +27,7 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
           tabs: [
             Tab(text: 'Prenotazioni'),
             Tab(text: 'Utenti'),
+            Tab(text: 'Log'),
           ],
         ),
       ),
@@ -96,6 +97,7 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
               children: [
                 buildPrenotazioniTab(),
                 buildUtentiTab(),
+                buildLogTab(),
               ],
             ),
           ),
@@ -221,6 +223,70 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
       ],
     );
   }
+
+  Widget buildLogTab() {
+    if (selectedDeviceId == null) {
+      return Center(child: Text("Seleziona un dispositivo"));
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+        .collection('devices')
+        .doc(selectedDeviceId)
+        .collection('access_logs')
+        .orderBy('timestamp', descending: true)
+        .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Errore: ${snapshot.error}'));
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Center(child: Text("Nessun log disponibile"));
+        }
+
+
+        var logs = snapshot.data!.docs;
+        return ListView.builder(
+          itemCount: logs.length,
+          itemBuilder: (context, index) {
+            var logData = logs[index].data() as Map<String, dynamic>;
+            String action = logData['action'] ?? 'unknown';
+            String userId = logData['user_id'] ?? 'unknown';
+            String timestampStr = logData['timestamp'] ?? '';
+            DateTime? timestamp = DateTime.tryParse(timestampStr);
+            String timeStr = timestamp != null ? timestamp.toLocal().toString() : timestampStr;
+            if (userId == 'unknown' || userId == 'None') {
+              return ListTile(
+                title: Text('Azione: $action'),
+                subtitle: Text('Utente: N/A - $timeStr'),
+              );
+            }
+            return FutureBuilder<DocumentSnapshot>(
+              future: (userId == 'unknown' || userId == 'None')
+                ? Future.value(null)
+                : FirebaseFirestore.instance.collection('users').doc(userId).get(),
+              builder: (context, userSnapshot) {
+                String email = 'N/A';
+                if (userSnapshot.connectionState == ConnectionState.done && userSnapshot.data != null) {
+                  var userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                  email = userData?['email'] ?? 'no-email';
+                }
+
+                return ListTile(
+                  title: Text('Azione: $action'),
+                  subtitle: Text('Utente: $email - $timeStr'),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
 
   Future<void> deleteBooking(String bookingId) async {
     if (selectedDeviceId == null) return;

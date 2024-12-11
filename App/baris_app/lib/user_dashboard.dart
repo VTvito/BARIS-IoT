@@ -241,6 +241,18 @@ class _UserDashboardState extends State<UserDashboard> {
           .collection('devices')
           .doc(deviceId)
           .update({'lock': false});
+
+      // Aggiungiamo il log
+      await FirebaseFirestore.instance
+          .collection('devices')
+          .doc(deviceId)
+          .collection('access_logs')
+          .add({
+            "timestamp": DateTime.now().toUtc().toIso8601String(),
+            "user_id": user!.uid,
+            "action": "unlock"
+          });
+
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Serratura sbloccata!')));
     } else {

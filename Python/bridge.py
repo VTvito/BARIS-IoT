@@ -1,30 +1,39 @@
 import serial
-import subprocess
-import firebase_admin
-from firebase_admin import credentials, firestore
 import time
 import logging
 from datetime import datetime
 import threading
 
-## Configurazione
-PORTNAME = 'COM3'
-DEVICE_ID = 'iliadbox-77F2A2' 
-FIREBASE_CREDENTIALS = "Python/baris-iot-vito-firebase-adminsdk-baww0-f6eece4154.json"
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 class Bridge:
-    def __init__(self, port, device_id):
+    def __init__(self, port, device_id, db, name, latitude, longitude):
         self.port = port
         self.device_id = device_id
+        self.db = db
         self.ser = None
-        self.db = None
         self.inbuffer = b''
-        self.lock_state = True  
+        self.lock_state = True
         self.porta_aperta_state = False
         self.allarme_state = False
+        self.name = name
+        self.latitude = latitude
+        self.longitude = longitude
         self.running = True
+
+        # Inizializzazione del device se non esiste
+        doc_ref = self.db.collection("devices").document(self.device_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            doc_ref.set({
+                "name": self.name,
+                "lock": True,
+                "porta_aperta": False,
+                "allarme": False,
+                "latitude": float(self.latitude),
+                "longitude": float(self.longitude),
+                "maintenance_mode": False,
+                "last_access": "Never"
+            })
+            logging.info(f"Dispositivo {self.device_id} inizializzato in Firestore.")
 
     def setup_serial(self):
         try:
@@ -33,25 +42,6 @@ class Bridge:
         except serial.SerialException as e:
             logging.error(f"Errore nella connessione seriale: {e}")
             exit()
-
-    def get_ssid(self):
-        try:
-            results = subprocess.check_output(["netsh", "wlan", "show", "interfaces"])
-            results = results.decode("latin1")
-            results = results.replace("\r", "")
-            lines = results.split("\n")
-            ssid_line = next((line for line in lines if "SSID" in line and "BSSID" not in line), None)
-            if ssid_line:
-                ssid = ssid_line.split(":")[1].strip()
-                logging.info(f"SSID rilevato: {ssid}")
-                self.device_id = ssid  
-                return ssid
-            else:
-                logging.error("SSID non trovato.")
-                return "Unknown_SSID"
-        except Exception as e:
-            logging.error(f"Errore nel recupero SSID: {e}")
-            return "Unknown_SSID"
 
     def check_door_remote_thread(self):
         while self.running:
@@ -108,7 +98,7 @@ class Bridge:
         doc.collection("access_logs").add({
             "timestamp": timestamp,
             "action": stato_str,
-            "user_id": None  # Non sappiamo chi ha aperto, a meno che Arduino non lo indichi o l'app
+            "user_id": None
         })
         self.lock_state = lock
         self.porta_aperta_state = porta_aperta
@@ -119,36 +109,16 @@ class Bridge:
         doc = self.db.collection("devices").document(self.device_id)
         doc.update({"allarme": stato_allarme})
         self.allarme_state = stato_allarme
+        action = "allarme_on" if stato_allarme else "allarme_off"
+        doc.collection('access_logs').add({
+            "timestamp": timestamp,
+            "user_id": None,
+            "action": action
+        })
         if stato_allarme:
             logging.warning("Allarme attivato su Firestore.")
         else:
             logging.info("Allarme disattivato su Firestore.")
-        doc = self.db.collection('devices').document(self.device_id).collection('access_logs').add({
-        "timestamp": datetime.utcnow().isoformat(),
-        "user_id": None,
-        "action": "allarme"})
-
-    def write_to_firebase(self, device_name):
-        try:
-            doc = self.db.collection("devices").document(device_name)
-            # Inizializzazione del dispositivo con i campi previsti
-            doc.set({
-                "name": device_name,
-                "lock": True,
-                "porta_aperta": False,
-                "last_access": "Never",
-                "latitude": 45.4642,      # Esempio, cambiare con la posizione reale
-                "longitude": 9.1900,     # Esempio
-                "allarme": False,
-                "maintenance_mode": False
-            })
-            logging.info(f"Document {device_name} inizializzato in Firestore.")
-            self.lock_state = True
-            self.porta_aperta_state = False
-            self.allarme_state = False
-            logging.info("Stati iniziali impostati: lock=True, porta_aperta=False, allarme=False")
-        except Exception as e:
-            logging.error(f"Errore nell'inizializzazione Firestore: {e}")
 
     def read_from_firebase(self):
         try:
@@ -161,7 +131,6 @@ class Bridge:
                 new_porta_aperta_state = data.get("porta_aperta", False)
                 new_allarme_state = data.get("allarme", False)
 
-                # Controlla se lo stato della serratura è cambiato
                 if self.lock_state != new_lock_state:
                     self.lock_state = new_lock_state
                     if new_lock_state:
@@ -171,14 +140,11 @@ class Bridge:
                         logging.info("Invio comando sblocco serratura ad Arduino.")
                         self.ser.write("1".encode())
 
-                # Controlla lo stato dell'allarme
                 if self.allarme_state and not new_allarme_state:
-                    # Disattivazione allarme da Firestore
                     logging.info("Disattivazione allarme da Firestore - invio comando 'D' ad Arduino.")
                     self.ser.write("D".encode())
                     self.allarme_state = new_allarme_state
                 elif not self.allarme_state and new_allarme_state:
-                    # L'allarme è stato attivato - potrebbe essere stato attivato localmente da Arduino (EFF)
                     self.allarme_state = new_allarme_state
             else:
                 logging.warning("Nessun documento trovato per il dispositivo!")
@@ -194,38 +160,3 @@ class Bridge:
         if self.ser and self.ser.is_open:
             self.ser.close()
         logging.info("Bridge fermato.")
-
-
-if __name__ == '__main__':
-    # Inizializza il bridge
-    bridge = Bridge(port=PORTNAME, device_id=DEVICE_ID)
-    bridge.setup_serial()
-
-    # Inizializza Firebase
-    try:
-        cred = credentials.Certificate(FIREBASE_CREDENTIALS)
-        firebase_admin.initialize_app(cred)
-        bridge.db = firestore.client()
-        logging.info("Connesso a Firebase Firestore.")
-    except Exception as e:
-        logging.error(f"Errore nell'inizializzazione di Firebase: {e}")
-        exit()
-
-    # Ottiene l'SSID (che funge da device_id) e scrive la config di base
-    ssid = bridge.get_ssid()
-    bridge.write_to_firebase(ssid)
-
-    # Avvia il thread per ascoltare i pacchetti da Arduino
-    bridge.start_remote_thread()
-
-    # Loop principale: legge periodicamente da Firestore per aggiornare Arduino
-    try:
-        while bridge.running:
-            bridge.read_from_firebase()
-            time.sleep(2)
-    except KeyboardInterrupt:
-        logging.info("Interrotto dall'utente.")
-    except Exception as e:
-        logging.error(f"Errore nel loop principale: {e}")
-    finally:
-        bridge.stop()

@@ -73,7 +73,7 @@ print("Prenotazione creata con successo:", booking_id)
 log_id = "log_001"
 log_data = {
     "timestamp": datetime.utcnow().isoformat(),
-    "stato": "aperta",
+    "action": "aperta",
     "user_id": user_id
 }
 
