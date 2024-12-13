@@ -91,6 +91,10 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
               );
             },
           ),
+              // Mostra l'indicatore allarme se è stato selezionato un device
+          if (selectedDeviceId != null)
+            buildAlarmIndicator(selectedDeviceId!),
+
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -287,6 +291,39 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
     );
   }
 
+  Widget buildAlarmIndicator(String deviceId) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('devices').doc(deviceId).snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return Center(child: CircularProgressIndicator());
+        var data = snapshot.data!.data() as Map<String, dynamic>?;
+        if (data == null) return Text('Nessun dato sul dispositivo');
+        
+        bool allarme = data['allarme'] ?? false;
+
+        return Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
+            children: [
+              Text('Allarme: ${allarme ? "Attivo" : "Disattivo"}'),
+              SizedBox(width: 20),
+              if (allarme)
+                ElevatedButton(
+                  onPressed: () async {
+                    // Disattiva allarme
+                    await FirebaseFirestore.instance
+                      .collection('devices')
+                      .doc(deviceId)
+                      .update({"allarme": false});
+                  },
+                  child: Text('Disattiva Allarme'),
+                )
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   Future<void> deleteBooking(String bookingId) async {
     if (selectedDeviceId == null) return;
