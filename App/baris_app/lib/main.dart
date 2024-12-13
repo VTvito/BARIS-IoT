@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart'; // Generato dal flutterfire CLI
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'auth_service.dart';
 import 'home_page.dart';
 import 'login_page.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,5 +57,36 @@ class AuthenticationWrapper extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+Future<void> saveFcmToken() async {
+  User? user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
+  
+  String? token = await FirebaseMessaging.instance.getToken();
+  if (token != null) {
+    await FirebaseFirestore.instance.collection('users').doc(user.uid)
+      .update({
+        "fcm_tokens": FieldValue.arrayUnion([token])
+      });
+  }
+}
+
+Future<void> requestNotificationPermission() async {
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+  NotificationSettings settings = await messaging.requestPermission(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+    print('Permessi notifiche concessi');
+  } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
+    print('Permessi notifiche concessi in modalità provvisoria');
+  } else {
+    print('Permessi notifiche negati');
   }
 }

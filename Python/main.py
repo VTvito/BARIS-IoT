@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # parametri di configurazione passati al bridge relativo alla serratura
 PORTNAME = 'COM3'
 DEVICE_ID = 'iliadbox-77F2A2' 
-FIREBASE_CREDENTIALS = "Python/baris-iot-vito-firebase-adminsdk-baww0-f6eece4154.json"
+FIREBASE_CREDENTIALS = "Python/baris-iot-vito-firebase-adminsdk-baww0-19695e55a0.json"
 NAME = "Casa"
 LATITUDE = "45.4642"
 LONGITUDE = "9.19"
@@ -20,7 +20,7 @@ if __name__ == '__main__':
 
     # Avvia il thread per ascoltare i pacchetti da Arduino
     bridge.start_remote_thread()
-
+    
     try:
         while bridge.running:
             bridge.read_from_firebase()

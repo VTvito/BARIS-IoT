@@ -3,6 +3,7 @@ import time
 import logging
 from datetime import datetime
 import threading
+from firebase_admin import messaging
 
 class Bridge:
     def __init__(self, port, device_id, db, name, latitude, longitude):
@@ -33,7 +34,7 @@ class Bridge:
                 "maintenance_mode": False,
                 "last_access": "Never"
             })
-            logging.info(f"Dispositivo {self.device_id} inizializzato in Firestore.")
+            logging.info(f"Dispositivo {self.device_id} inizializzato in Firestore.")  
 
     def setup_serial(self):
         try:
@@ -74,6 +75,7 @@ class Bridge:
                     elif data_str == "EFF":
                         # Effrazione -> allarme attivato
                         self.update_alarm(True)
+                        self.send_notification_to_admins("Allarme Effrazione!", f"Effrazione rilevata su {self.name}")
                     elif data_str == "D":
                         # Disattiva allarme
                         self.update_alarm(False)
@@ -139,6 +141,8 @@ class Bridge:
                     else:
                         logging.info("Invio comando sblocco serratura ad Arduino.")
                         self.ser.write("1".encode())
+                        self.send_notification_to_admins("Serratura sbloccata", f"La serratura {self.name} è stata sbloccata da un utente.")
+
 
                 if self.allarme_state and not new_allarme_state:
                     logging.info("Disattivazione allarme da Firestore - invio comando 'D' ad Arduino.")
@@ -150,6 +154,34 @@ class Bridge:
                 logging.warning("Nessun documento trovato per il dispositivo!")
         except Exception as e:
             logging.error(f"Errore nella lettura da Firestore: {e}")
+
+    def send_notification_to_admins(self, title, body):
+        admins = self.db.collection('users').where('role', '==', 'admin').stream()
+        tokens = []
+        for admin_doc in admins:
+            data = admin_doc.to_dict()
+            user_tokens = data.get('fcm_tokens', [])
+            tokens.extend(user_tokens)
+        
+        logging.info(f"Admin FCM Tokens: {tokens}")
+
+        if not tokens:
+            logging.warning("Nessun token FCM trovato per gli admin.")
+            return
+
+        for token in tokens:
+            message = messaging.Message(
+                notification=messaging.Notification(
+                    title=title,
+                    body=body
+                ),
+                token=token
+            )
+            try:
+                response = messaging.send(message)
+                logging.info(f"Notifica inviata a {token}, risposta: {response}")
+            except Exception as e:
+                logging.error(f"Errore nell'invio della notifica a {token}: {e}")
 
     def start_remote_thread(self):
         remote_thread = threading.Thread(target=self.check_door_remote_thread, daemon=True)
