@@ -15,6 +15,12 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+
+
+    // listener per aggiornare la UI quando cambia tab
+    _tabController.addListener(() {
+      setState(() {}); // Ricostruisce lo scaffold e dunque il FAB
+    });
   }
 
   @override
@@ -111,14 +117,29 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
           ),
         ],
       ),
-      floatingActionButton: _tabController.index == 0 && selectedDeviceId != null
-          ? FloatingActionButton(
-              onPressed: showCreateBookingDialog,
-              child: Icon(Icons.add),
-            )
-          : null,
+      floatingActionButton: _buildFab(),
     );
   }
+
+  Widget _buildFab() {
+    if (_tabController.index == 0 && selectedDeviceId != null) {
+      // Tab Prenotazioni: FAB per creare nuove prenotazioni
+      return FloatingActionButton(
+        onPressed: showCreateBookingDialog,
+        child: Icon(Icons.add),
+      );
+    } else if (_tabController.index == 1) {
+      // Tab Utenti: FAB per creare un nuovo utente
+      return FloatingActionButton(
+        onPressed: showCreateUserDialog,
+        child: Icon(Icons.person_add),
+      );
+    } else {
+      // Tab Log o nessun'altra tab: nessun FAB
+      return SizedBox.shrink(); // widget invisibile invece di null
+    }
+  }
+
 
   Widget buildPrenotazioniTab() {
     if (selectedDeviceId == null) {
@@ -182,9 +203,8 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
   }
 
   Widget buildUtentiTab() {
-    return Stack(
-      children: [
-        StreamBuilder<QuerySnapshot>(
+    return 
+          StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance.collection('users').snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -219,17 +239,7 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
               },
             );
           },
-        ),
-        Positioned(
-          bottom: 16,
-          right: 16,
-          child: FloatingActionButton(
-            onPressed: showCreateUserDialog,
-            child: Icon(Icons.person_add),
-          ),
-        ),
-      ],
-    );
+        );
   }
 
   Widget buildLogTab() {

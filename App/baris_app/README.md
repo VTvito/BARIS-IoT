@@ -1,6 +1,6 @@
 # baris_app
 
-A new Flutter project.
+B&B Access Remote IoT System
 
 ## Getting Started
 

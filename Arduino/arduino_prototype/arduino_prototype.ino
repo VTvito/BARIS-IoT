@@ -18,6 +18,10 @@ int effrazione_count = 0;  // Contatore per rilevare effrazione
 unsigned long lastCheckTime = 0; // Per controllo periodico porta
 const unsigned long CHECK_INTERVAL = 3000; // Controllo ogni 3 secondi
 
+// Variabili per heartbeat
+unsigned long lastHeartbeatTime = 0;  // Ultimo tempo in cui abbiamo inviato un heartbeat
+const unsigned long HEARTBEAT_INTERVAL = 60000; // 60 secondi
+
 void setup() {
     Serial.begin(9600);
     pinMode(TRIGGER_PIN, OUTPUT);
@@ -34,6 +38,7 @@ void setup() {
     digitalWrite(BUZZER, LOW);
 
     Serial.println("Sistema pronto...");
+    lastHeartbeatTime = millis(); // Inizializza tempo di heartbeat
 }
 
 int check_proximity() {
@@ -201,5 +206,11 @@ void loop() {
         // Le pause avvengono nella funzione stessa
         // Per semplicità, manteniamo il delay(500) interno a check_alarm_condition
         check_alarm_condition();
+    }
+        // Heartbeat: se è passato più di HEARTBEAT_INTERVAL (60s), invia "HB"
+    if (millis() - lastHeartbeatTime >= HEARTBEAT_INTERVAL) {
+        send_packet("HB");
+        Serial.println("Heartbeat inviato (HB).");
+        lastHeartbeatTime = millis();
     }
 }

@@ -19,17 +19,33 @@ class Bridge:
         self.latitude = latitude
         self.longitude = longitude
         self.running = True
+        # controllo heartbeat arduino
+        self.last_arduino_packet_time = time.time()
+        self.arduino_offline_notified = False
 
 
     def setup_serial(self):
         try:
             self.ser = serial.Serial(self.port, 9600, timeout=1)
             # attesa per assicurare che la connessione sia avvenuta
-            time.sleep(1)
+            time.sleep(2)
             logging.info(f"Connesso alla porta seriale {self.port}")
         except serial.SerialException as e:
             logging.error(f"Errore nella connessione seriale: {e}")
             exit()
+
+    # funzione per disconnessioni/riconnessioni arduino "a caldo"
+    def reopen_serial(self):
+        # chiudi connessione attuale
+        if self.ser and self.ser.is_open:
+            self.ser.close()
+        # Ripeti tentativo di connessione
+        try:
+            self.ser = serial.Serial(self.port, 9600, timeout=1)
+            time.sleep(2)
+            logging.info(f"Riconnesso alla porta seriale {self.port}")
+        except serial.SerialException as e:
+            logging.error(f"Errore nella riconnessione seriale: {e}")
 
     # eseguita in accensione per assicurarsi l'allineamento fra lo stato in Firestone e stato dell'Arduino caso blackout ecc..
     def sync_with_arduino(self):
@@ -98,6 +114,12 @@ class Bridge:
                 try:
                     data_str = self.inbuffer.decode('utf-8').strip()
                     logging.info(f"Pacchetto ricevuto: {data_str}")
+                    
+                    # Ricevuto un pacchetto da Arduino - Aggiornamento heartbeat
+                    self.last_arduino_packet_time = time.time()  # Aggiorna ultimo pacchetto ricevuto
+                    if self.arduino_offline_notified:
+                        self.send_notification_to_admins("Arduino Online", f"Arduino per il device {self.name} è di nuovo online!")
+                    self.arduino_offline_notified = False  # Arduino è vivo, resetta notifica offline
 
                     if data_str == "001":
                         # Porta aperta
@@ -112,11 +134,18 @@ class Bridge:
                     elif data_str == "D":
                         # Disattiva allarme
                         self.update_alarm(False)
+                    elif data_str == "HB":
+                        # heartbeat
+                        continue
                     else:
                         logging.error(f"Messaggio sconosciuto: {data_str}")
 
                 except UnicodeDecodeError as e:
                     logging.error(f"Errore decodifica: {e}")
+            except serial.SerialException as e:
+                logging.error(f"Errore lettura seriale: {e}")
+                self.reopen_serial()
+                time.sleep(5) # attesa prima di riprovare
             except Exception as e:
                 logging.error(f"Errore lettura pacchetto: {e}")
                 time.sleep(1)
@@ -215,6 +244,23 @@ class Bridge:
                 logging.info(f"Notifica inviata a {token}, risposta: {response}")
             except Exception as e:
                 logging.error(f"Errore nell'invio della notifica a {token}: {e}")
+
+    # controllo heartbeat arduino
+    def start_offline_check_thread(self):
+        offline_thread = threading.Thread(target=self.check_arduino_offline, daemon=True)
+        offline_thread.start()
+
+    def check_arduino_offline(self):
+        while self.running:
+            # Controlla ogni 60 secondi (1 minuto)
+            time.sleep(60)
+            now = time.time()
+            diff = now - self.last_arduino_packet_time
+            # Soglia: 5 minuti (300 secondi)
+            if diff > 300 and not self.arduino_offline_notified:
+                logging.warning("Nessun pacchetto da Arduino da più di 5 minuti. Arduino offline?")
+                self.send_notification_to_admins("Arduino Offline", f"Non riceviamo più pacchetti dalla Serratura da più di 5 minuti per il device {self.name}.")
+                self.arduino_offline_notified = True
 
     def start_remote_thread(self):
         remote_thread = threading.Thread(target=self.check_door_remote_thread, daemon=True)
