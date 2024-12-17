@@ -41,3 +41,40 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Firebase credentials
+firebase.json
+
+# Android
+android/.gradle/
+android/app/build/
+android/**/GeneratedPluginRegistrant.java
+android/**/gradlew
+android/**/gradlew.bat
+android/.idea/
+android/local.properties
+android/app/*.keystore
+
+# iOS
+ios/.generated/
+ios/Flutter/Flutter.framework
+ios/Flutter/flutter_assets
+ios/Pods/
+ios/Runner.xcworkspace/
+ios/Runner/GeneratedPluginRegistrant.*
+
+# Linux
+linux/flutter/ephemeral/
+
+# Web
+web/.dart_tool/
+web/canvaskit/
+
+# MacOS
+macos/.flutter-plugins
+macos/.flutter-plugins-dependencies
+macos/Flutter/ephemeral/
+
+# Windows
+windows/flutter/ephemeral/
+windows/.dart_tool/
