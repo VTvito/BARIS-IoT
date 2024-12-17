@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
 
 class UserDashboard extends StatefulWidget {
   @override
@@ -214,6 +215,51 @@ class _UserDashboardState extends State<UserDashboard> {
       deviceId = selectedUserDeviceId;
     }
 
+    // Prima di procedere con il controllo prenotazioni e posizione:
+    DocumentSnapshot deviceDoc = await FirebaseFirestore.instance.collection('devices').doc(deviceId).get();
+    if (deviceDoc.exists) {
+      var deviceData = deviceDoc.data() as Map<String, dynamic>;
+      bool currentLock = deviceData['lock'] ?? true;
+      if (!currentLock) {
+        // Serratura già sbloccata
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('La serratura è già sbloccata.')));
+        return;
+      }
+    }
+      // Ottieni posizione utente
+    Position? userPosition = await getCurrentUserPosition();
+    if (userPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Impossibile ottenere la posizione utente. Verifica i permessi.')),
+      );
+      return;
+    }
+
+    // Ottieni posizione dispositivo
+    var devicePos = await getDevicePosition(deviceId!);
+    if (devicePos == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Impossibile ottenere la posizione del dispositivo.')),
+      );
+      return;
+    }
+
+    double distance = calculateDistance(
+      userPosition.latitude, userPosition.longitude,
+      devicePos['lat']!, devicePos['lng']!
+    );
+
+    double maxDistance = 100.0; // Raggio in metri
+    if (distance > maxDistance) {
+      // Utente troppo lontano
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sei troppo lontano dal dispositivo per sbloccarlo.')),
+      );
+      return;
+    }
+
+  // Se l'utente è nel raggio, continua
+
     final now = DateTime.now();
 
     var bookingsSnapshot = await FirebaseFirestore.instance
@@ -260,5 +306,53 @@ class _UserDashboardState extends State<UserDashboard> {
         SnackBar(content: Text('Nessuna prenotazione attiva al momento.')),
       );
     }
+  }
+
+  Future<Position?> getCurrentUserPosition() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // Verifica se i servizi di geolocalizzazione sono abilitati
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // Servizi GPS non abilitati
+      return null;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        // Permessi negati
+        return null;
+      }
+    }
+    
+    if (permission == LocationPermission.deniedForever) {
+      // Permessi permanentemente negati
+      return null;
+    }
+
+    // Recupera la posizione corrente
+    Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    return position;
+  }
+
+  Future<Map<String, double>?> getDevicePosition(String deviceId) async {
+    DocumentSnapshot doc = await FirebaseFirestore.instance.collection('devices').doc(deviceId).get();
+    if (doc.exists) {
+      var data = doc.data() as Map<String, dynamic>?;
+      if (data != null) {
+        double lat = (data['latitude'] as num).toDouble();
+        double lng = (data['longitude'] as num).toDouble();
+        return {"lat": lat, "lng": lng};
+      }
+    }
+    return null;
+  }
+
+  double calculateDistance(double userLat, double userLng, double deviceLat, double deviceLng) {
+    double distanceInMeters = Geolocator.distanceBetween(userLat, userLng, deviceLat, deviceLng);
+    return distanceInMeters;
   }
 }

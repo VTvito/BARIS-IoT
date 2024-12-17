@@ -45,5 +45,14 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>La tua posizione è necessaria per sbloccare la serratura solo se sei vicino.</string>    
+    <!-- Aggiungi altre chiavi di autorizzazione se necessario -->
+    <!-- Ad esempio, per le notifiche push: -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>remote-notification</string>
+    </array>
 </dict>
 </plist>
+

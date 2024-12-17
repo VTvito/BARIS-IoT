@@ -158,6 +158,9 @@ void check_for_remote_input() {
         } else if (command == "D") {
             // Disattiva allarme da remoto
             deactivate_alarm();
+        } else if (command == "A"){
+            // Attiva allarme (sync da Firestone)
+            activate_alarm();
         }
     }
 }

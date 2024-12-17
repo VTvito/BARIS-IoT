@@ -94,6 +94,10 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
               // Mostra l'indicatore allarme se è stato selezionato un device
           if (selectedDeviceId != null)
             buildAlarmIndicator(selectedDeviceId!),
+          
+              // Mostra l'indicatore dello stato delle porte e della serratura
+          if (selectedDeviceId != null)
+            buildLockIndicator(selectedDeviceId!),
 
           Expanded(
             child: TabBarView(
@@ -324,6 +328,55 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
       },
     );
   }
+
+  Widget buildLockIndicator(String deviceId) {
+  return StreamBuilder<DocumentSnapshot>(
+    stream: FirebaseFirestore.instance.collection('devices').doc(deviceId).snapshots(),
+    builder: (context, snapshot) {
+      if (!snapshot.hasData) return Center(child: CircularProgressIndicator());
+      var data = snapshot.data!.data() as Map<String, dynamic>?;
+      if (data == null) return Text('Nessun dato sul dispositivo');
+
+      bool lock = data['lock'] ?? true;
+      bool portaAperta = data['porta_aperta'] ?? false;
+
+      return Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Prima riga: stato della porta
+            Row(
+              children: [
+                Text('Porta: ${portaAperta ? "Aperta" : "Chiusa"}'),
+              ],
+            ),
+            SizedBox(height: 10),
+
+            // Seconda riga: stato serratura e pulsante
+            Row(
+              children: [
+                Text('Serratura: ${lock ? "Bloccata" : "Sbloccata"}'),
+                SizedBox(width: 20),
+                if (lock)
+                  ElevatedButton(
+                    onPressed: () async {
+                      // L’admin forza lo sblocco della serratura
+                      await FirebaseFirestore.instance.collection('devices').doc(deviceId).update({"lock": false});
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Serratura sbloccata da admin.')));
+                    },
+                    child: Text('Sblocca Serratura'),
+                  )
+              ],
+            ),
+          ],
+        ),
+      );
+    },
+  );
+  }
+
+
 
   Future<void> deleteBooking(String bookingId) async {
     if (selectedDeviceId == null) return;

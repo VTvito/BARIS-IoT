@@ -20,10 +20,48 @@ class Bridge:
         self.longitude = longitude
         self.running = True
 
-        # Inizializzazione del device se non esiste
+
+    def setup_serial(self):
+        try:
+            self.ser = serial.Serial(self.port, 9600, timeout=1)
+            # attesa per assicurare che la connessione sia avvenuta
+            time.sleep(1)
+            logging.info(f"Connesso alla porta seriale {self.port}")
+        except serial.SerialException as e:
+            logging.error(f"Errore nella connessione seriale: {e}")
+            exit()
+
+    # eseguita in accensione per assicurarsi l'allineamento fra lo stato in Firestone e stato dell'Arduino caso blackout ecc..
+    def sync_with_arduino(self):
+        # Legge stato da Firestore
         doc_ref = self.db.collection("devices").document(self.device_id)
         doc = doc_ref.get()
-        if not doc.exists:
+        if doc.exists:
+            data = doc.to_dict()
+            desired_lock = data.get("lock", True)
+            desired_allarme = data.get("allarme", False)
+            
+            # Arduino appena acceso: lock=true, allarme=false di default.
+            if not desired_lock:
+                logging.info("Sync: Firestore dice lock=false, invio '1' per sbloccare Arduino.")
+                self.ser.write("1".encode())
+                self.lock_state = False
+            
+            # Se Firestore dice allarme=true, invia "EFF".
+            if desired_allarme:
+                logging.info("Sync: Firestore dice allarme=true, invio 'EFF' per attivare allarme su Arduino.")
+                self.ser.write("A".encode())
+                self.allarme_state = True
+            
+            # Porta aperta: Arduino determina lo stato dalla distanza. Firestore ne tiene traccia come logico.
+            # In caso di discrepanza, ci fidiamo di Arduino e aggiorniamo Firestore.
+            # Quindi il Bridge aspetta i pacchetti "001"/"000" da Arduino per aggiornarla.
+            # Nessun comando da inviare per la porta.
+            
+            logging.info("Sync completata. Stato allineato secondo Firestore.")
+        else:
+            logging.warning("Sync: Nessun documento trovato per il dispositivo. Uso stato base.")
+            # Se non esiste il documento del device, lo inizializzo
             doc_ref.set({
                 "name": self.name,
                 "lock": True,
@@ -31,18 +69,13 @@ class Bridge:
                 "allarme": False,
                 "latitude": float(self.latitude),
                 "longitude": float(self.longitude),
-                "maintenance_mode": False,
                 "last_access": "Never"
             })
-            logging.info(f"Dispositivo {self.device_id} inizializzato in Firestore.")  
-
-    def setup_serial(self):
-        try:
-            self.ser = serial.Serial(self.port, 9600, timeout=1)
-            logging.info(f"Connesso alla porta seriale {self.port}")
-        except serial.SerialException as e:
-            logging.error(f"Errore nella connessione seriale: {e}")
-            exit()
+            logging.info(f"Dispositivo {self.name} inizializzato in Firestore.")  
+            # Arduino è già allo stato base, niente da fare.
+            self.lock_state = True
+            self.allarme_state = False
+            self.porta_aperta_state = False
 
     def check_door_remote_thread(self):
         while self.running:
@@ -96,7 +129,7 @@ class Bridge:
             "lock": lock,
             "last_access": timestamp
         })
-        stato_str = "aperta" if porta_aperta else "chiusa"
+        stato_str = "porta aperta" if porta_aperta else "porta chiusa"
         doc.collection("access_logs").add({
             "timestamp": timestamp,
             "action": stato_str,

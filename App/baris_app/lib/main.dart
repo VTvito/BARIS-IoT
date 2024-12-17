@@ -5,7 +5,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart'; // Generato dal flutterfire CLI
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
 import 'auth_service.dart';
 import 'home_page.dart';
 import 'login_page.dart';
