@@ -2,7 +2,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore, auth
 
 # Percorso al file di credenziali del service account
-SERVICE_ACCOUNT_FILE = "Python/baris-iot-vito-firebase-adminsdk-baww0-19695e55a0.json"
+SERVICE_ACCOUNT_FILE = "baris-iot-vito-firebase-adminsdk-baww0-19695e55a0.json"
 
 # Inizializzazione Firebase Admin SDK
 cred = credentials.Certificate(SERVICE_ACCOUNT_FILE)
