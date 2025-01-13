@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # parametri di configurazione passati al bridge relativi alla serratura
 PORTNAME = 'COM3'
 DEVICE_ID = 'iliadbox-77F2A2' 
-FIREBASE_CREDENTIALS = "baris-iot-vito-firebase-adminsdk-baww0-19695e55a0.json"
+FIREBASE_CREDENTIALS = "Bridge/baris-iot-vito-firebase-adminsdk-baww0-19695e55a0.json"
 NAME = "Casa"
 LATITUDE = "44.48130278433922"
 LONGITUDE = "11.367877878271969"

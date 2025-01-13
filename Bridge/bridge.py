@@ -47,7 +47,7 @@ class Bridge:
         except serial.SerialException as e:
             logging.error(f"Errore nella riconnessione seriale: {e}")
 
-    # eseguita in accensione per assicurarsi l'allineamento fra lo stato in Firestone e stato dell'Arduino caso blackout ecc..
+    # eseguita in accensione per assicurarsi l'allineamento fra lo stato in Firestone e stato dell'Arduino caso blackout ecc...
     def sync_with_arduino(self):
         # Legge stato da Firestore
         doc_ref = self.db.collection("devices").document(self.device_id)
@@ -69,8 +69,8 @@ class Bridge:
                 self.ser.write("A".encode())
                 self.allarme_state = True
             
-            # Porta aperta: Arduino determina lo stato dalla distanza. Firestore ne tiene traccia come logico.
-            # In caso di discrepanza, ci fidiamo di Arduino e aggiorniamo Firestore.
+            # Porta aperta: Arduino determina lo stato dalla distanza. Firestore ne tiene solo traccia.
+            # In caso di discrepanza, ci fidiamo di Arduino.
             # Quindi il Bridge aspetta i pacchetti "001"/"000" da Arduino per aggiornarla.
             # Nessun comando da inviare per la porta.
             

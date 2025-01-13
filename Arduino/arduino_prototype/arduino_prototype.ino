@@ -90,7 +90,7 @@ void deactivate_alarm() {
         Serial.println("Allarme disattivato (D).");
         allarme_attivo = false;
         send_packet("D");
-        // Ripristino LED e buzzer
+        // Ripristino stao LED Rosso e buzzer
         digitalWrite(LED_ROSSO, HIGH);
         digitalWrite(BUZZER, LOW);
         effrazione_count = 0;
@@ -202,8 +202,6 @@ void loop() {
         lastCheckTime = millis();
         check_alarm_condition();
     } else if (allarme_attivo) {
-        // Se allarme attivo, lampeggia più frequentemente LED e BUZZER
-        // Le pause avvengono nella funzione stessa
         // Per semplicità, manteniamo il delay(500) interno a check_alarm_condition
         check_alarm_condition();
     }
