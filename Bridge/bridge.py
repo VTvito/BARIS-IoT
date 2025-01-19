@@ -30,6 +30,7 @@ class Bridge:
             # attesa per assicurare che la connessione sia avvenuta
             time.sleep(2)
             logging.info(f"Connesso alla porta seriale {self.port}")
+            self.sync_with_arduino()
         except serial.SerialException as e:
             logging.error(f"Errore nella connessione seriale: {e}")
             exit()
@@ -44,6 +45,7 @@ class Bridge:
             self.ser = serial.Serial(self.port, 9600, timeout=1)
             time.sleep(2)
             logging.info(f"Riconnesso alla porta seriale {self.port}")
+            self.sync_with_arduino()
         except serial.SerialException as e:
             logging.error(f"Errore nella riconnessione seriale: {e}")
 
@@ -63,17 +65,16 @@ class Bridge:
                 self.ser.write("1".encode())
                 self.lock_state = False
             
-            # Se Firestore dice allarme=true, invia "EFF".
+            # Se Firestore dice allarme=true, invia "A".
             if desired_allarme:
-                logging.info("Sync: Firestore dice allarme=true, invio 'EFF' per attivare allarme su Arduino.")
+                logging.info("Sync: Firestore dice allarme=true, invio 'A' per attivare allarme su Arduino.")
                 self.ser.write("A".encode())
                 self.allarme_state = True
             
             # Porta aperta: Arduino determina lo stato dalla distanza. Firestore ne tiene solo traccia.
             # In caso di discrepanza, ci fidiamo di Arduino.
-            # Quindi il Bridge aspetta i pacchetti "001"/"000" da Arduino per aggiornarla.
-            # Nessun comando da inviare per la porta.
-            
+            # Quindi il Bridge aspetta i pacchetti da Arduino per aggiornarla.
+                        
             logging.info("Sync completata. Stato allineato secondo Firestore.")
         else:
             logging.warning("Sync: Nessun documento trovato per il dispositivo. Uso stato base.")

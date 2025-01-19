@@ -15,8 +15,8 @@ bool door_open = false;  // Porta inizialmente chiusa
 bool allarme_attivo = false; // Allarme inizialmente disattivato
 
 int effrazione_count = 0;  // Contatore per rilevare effrazione
-unsigned long lastCheckTime = 0; // Per controllo periodico porta
-const unsigned long CHECK_INTERVAL = 3000; // Controllo ogni 3 secondi
+unsigned long lastCheckTime = 0; // Contiene millis() dell'ultimo controllo sull'allarme
+const unsigned long CHECK_INTERVAL = 3000; // Controllo ogni 3 secondi sull'allarme
 
 // Variabili per heartbeat
 unsigned long lastHeartbeatTime = 0;  // Ultimo tempo in cui abbiamo inviato un heartbeat
@@ -106,7 +106,7 @@ void unlock_procedure() {
 
     int consecutive_closed = 0;
     while (true) {
-        delay(3000); 
+        delay(1000); 
         int door_status = check_proximity();
 
         if (door_status == 1) { // Porta aperta
