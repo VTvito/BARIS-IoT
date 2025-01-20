@@ -135,6 +135,9 @@ class Bridge:
                     elif data_str == "D":
                         # Disattiva allarme
                         self.update_alarm(False)
+                    elif data_str == "NRLOCK":
+                        # Serrattura da più di 60s
+                        self.send_notification_to_admins("Serratura aperta a Lungo!", f"Serratura aperta a lungo! su {self.name}")
                     elif data_str == "HB":
                         # heartbeat
                         continue

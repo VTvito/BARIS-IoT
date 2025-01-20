@@ -9,18 +9,19 @@
 #define LED_BLU 3
 #define DISTANCE_THRESHOLD 10
 
-// Stato del sistema
-bool lock = true;        // Serratura inizialmente bloccata
-bool door_open = false;  // Porta inizialmente chiusa
-bool allarme_attivo = false; // Allarme inizialmente disattivato
+// Variabili di stato del sistema --inizializzazione
+bool lock = true;        // Serratura bloccata
+bool door_open = false;  // Porta chiusa
+bool allarme_attivo = false; // Allarme disattivato
 
-int effrazione_count = 0;  // Contatore per rilevare effrazione
-unsigned long lastCheckTime = 0; // Contiene millis() dell'ultimo controllo sull'allarme
-const unsigned long CHECK_INTERVAL = 3000; // Controllo ogni 3 secondi sull'allarme
+// Variabili per gestione allarme
+int effrazione_count = 0;  // Contatore per conferma effrazione (evita falsi positivi)
+unsigned long lastCheckTime = 0; // Contiene millis() dell'ultimo check sull'allarme
+const unsigned long CHECK_INTERVAL = 3000;
 
 // Variabili per heartbeat
-unsigned long lastHeartbeatTime = 0;  // Ultimo tempo in cui abbiamo inviato un heartbeat
-const unsigned long HEARTBEAT_INTERVAL = 60000; // 60 secondi
+unsigned long lastHeartbeatTime = 0;  // Contiene l'ultimo momento in cui abbiamo inviato un heartbeat
+const unsigned long HEARTBEAT_INTERVAL = 60000;
 
 void setup() {
     Serial.begin(9600);
@@ -32,7 +33,7 @@ void setup() {
     pinMode(BUZZER, OUTPUT);
 
     // Stato iniziale
-    digitalWrite(LED_BLU, LOW);
+    digitalWrite(LED_BLU, LOW); // Porta Chiusa
     digitalWrite(LED_VERDE, LOW);
     digitalWrite(LED_ROSSO, HIGH); // Serratura chiusa
     digitalWrite(BUZZER, LOW);
@@ -41,6 +42,7 @@ void setup() {
     lastHeartbeatTime = millis(); // Inizializza tempo di heartbeat
 }
 
+// Monitora l'apertura o chiusura della porta usando un sensore ad ultrasuoni, misurando la distanza rilevata
 int check_proximity() {
     digitalWrite(TRIGGER_PIN, LOW);
     delayMicroseconds(2);
@@ -65,18 +67,21 @@ int check_proximity() {
     }
 }
 
+// Gestione buzzer
 void buzz(int duration) {
     digitalWrite(BUZZER, HIGH);
     delay(duration);
     digitalWrite(BUZZER, LOW);
 }
 
+// Scambia informazioni sullo stato della serratura, porta, e allarme: invia messaggi di stato al bridge
 void send_packet(const char* message) {
     Serial.write(0xFB);
     Serial.print(message);
     Serial.write(0xFA);
 }
 
+// Attiva l’allarme in caso di apertura non autorizzata della porta., accende il buzzer e invia un pacchetto di stato al bridge
 void activate_alarm() {
     if (!allarme_attivo) {
         Serial.println("Allarme attivato!");
@@ -85,49 +90,73 @@ void activate_alarm() {
     }
 }
 
+// Disattiva l’allarme, ripristina il sistema e invia un pacchetto di stato al bridge
 void deactivate_alarm() {
     if (allarme_attivo) {
         Serial.println("Allarme disattivato (D).");
         allarme_attivo = false;
         send_packet("D");
-        // Ripristino stao LED Rosso e buzzer
         digitalWrite(LED_ROSSO, HIGH);
         digitalWrite(BUZZER, LOW);
         effrazione_count = 0;
     }
 }
 
+// Sblocca la serratura in risposta ai comandi ricevuti dal bridge.. e accende i LED corrispondenti.
+// Entra in una routine (while) in cui persiste fin quando la porta non è chiusa.. se entro 60s la serratura non si riblocca lo segnala
 void unlock_procedure() {
-    buzz(200);
+    buzz(200); // Beep di conferma sblocco
     lock = false; 
     digitalWrite(LED_VERDE, HIGH);
     digitalWrite(LED_ROSSO, LOW);
     Serial.println("Serratura sbloccata.");
 
+    // Salvo il tempo in cui c'è stato lo sblocco
+    unsigned long unlockStartTime = millis();
+    bool notRelockedAlarm = false;  // flag per inviare una sola volta il pacchetto e attivare beep fisso
+
     int consecutive_closed = 0;
+
     while (true) {
         delay(1000); 
         int door_status = check_proximity();
 
-        if (door_status == 1) { // Porta aperta
+        // Controllo se sono trascorsi 60 secondi dal momento dello sblocco
+        if (!notRelockedAlarm && (millis() - unlockStartTime >= 60000)) {
+            digitalWrite(BUZZER, HIGH);
+            send_packet("NRLOCK");
+            Serial.println("Allarme: la serratura non è stata rilockata entro 60s!");
+            notRelockedAlarm = true;
+        }
+
+        if (door_status == 1) { 
+            // Porta aperta
             if (!door_open) {
                 door_open = true;
                 digitalWrite(LED_BLU, HIGH);
-                send_packet("001");
+                send_packet("001"); 
                 Serial.println("Porta aperta.");
             }
             consecutive_closed = 0;
-        } else if (door_status == 0) { // Porta chiusa
+        } 
+        else if (door_status == 0) { 
+            // Porta chiusa
             if (door_open) {
                 consecutive_closed++;
                 Serial.print("Porta chiusa, ciclo: ");
                 Serial.println(consecutive_closed);
+
+                // Se la porta risulta chiusa per 3 rilevazioni consecutive (3 secondi nel tuo caso)
                 if (consecutive_closed >= 3) {
                     door_open = false;
                     lock = true; 
                     digitalWrite(LED_BLU, LOW);
                     digitalWrite(LED_VERDE, LOW);
                     digitalWrite(LED_ROSSO, HIGH);
+
+                    // se stava suonando, spengo il buzzer
+                    digitalWrite(BUZZER, LOW);
+
                     send_packet("000");
                     Serial.println("Porta chiusa e serratura bloccata.");
                     break;
@@ -137,6 +166,7 @@ void unlock_procedure() {
     }
 }
 
+// Blocca la serratura e aggiorna lo stato visivamente --allinea lo stato logico Arduino/Firestone--
 void lock_procedure() {
     buzz(100);
     lock = true;
@@ -149,6 +179,7 @@ void lock_procedure() {
     send_packet("000");
 }
 
+// Scambia informazioni sullo stato della serratura, porta, e allarme: ascolta comandi ricevuti dal bridge.
 void check_for_remote_input() {
     if (Serial.available() > 0) {
         String command = Serial.readString();
@@ -164,18 +195,19 @@ void check_for_remote_input() {
             // Disattiva allarme da remoto
             deactivate_alarm();
         } else if (command == "A"){
-            // Attiva allarme (sync da Firestone)
+            // Attiva allarme (sync da Firestone) 
             activate_alarm();
         }
     }
 }
 
+// Verifica le condizioni della porta e della serratura: attiva l'allarme se rileva aperture anomale
 void check_alarm_condition() {
     // Se serratura bloccata
     if (lock && !allarme_attivo) {
         int door_status = check_proximity();
         if (door_status == 1) {
-            // Porta aperta con serratura bloccata: incrementa contatore
+            // Porta aperta con serratura bloccata: incrementa contatore effrazione
             effrazione_count++;
             if (effrazione_count >= 3) {
                 activate_alarm();
@@ -185,7 +217,6 @@ void check_alarm_condition() {
             effrazione_count = 0;
         }
     }
-
     // Se allarme attivo, lampeggia LED rosso e buzzer
     if (allarme_attivo) {
         digitalWrite(LED_ROSSO, !digitalRead(LED_ROSSO));
@@ -202,10 +233,11 @@ void loop() {
         lastCheckTime = millis();
         check_alarm_condition();
     } else if (allarme_attivo) {
-        // Per semplicità, manteniamo il delay(500) interno a check_alarm_condition
+        // manteniamo il delay(500) interno a check_alarm_condition
         check_alarm_condition();
     }
-        // Heartbeat: se è passato più di HEARTBEAT_INTERVAL (60s), invia "HB"
+
+        // Heartbeat: se è passato più di HEARTBEAT_INTERVAL (60s), invia "HB" al bridge
     if (millis() - lastHeartbeatTime >= HEARTBEAT_INTERVAL) {
         send_packet("HB");
         Serial.println("Heartbeat inviato (HB).");
