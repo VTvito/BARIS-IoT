@@ -16,12 +16,14 @@ LONGITUDE = "11.367877878271969"
 if __name__ == '__main__':
     db = init_firebase(FIREBASE_CREDENTIALS)
     bridge = Bridge(port=PORTNAME, device_id=DEVICE_ID, db=db, name=NAME, latitude=LATITUDE, longitude=LONGITUDE)
+    
     bridge.setup_serial()
 
-    # Avvia il thread per ascoltare i pacchetti da Arduino
+# Avvia i thread per ascoltare i pacchetti da Arduino e monitorarne la connettività
     bridge.start_remote_thread()
     bridge.start_offline_check_thread()
 
+# Esegue un ciclo per leggere lo stato da Firebase limitando le richiesto ogni 2s
     try:
         while bridge.running:
             bridge.read_from_firebase()
