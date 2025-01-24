@@ -12,8 +12,8 @@ FIREBASE_CREDENTIALS = "/your/path/.json"
 
 # The new name, latitude, and longitude you want to store in Firestore
 NAME = "Home"
-LATITUDE = "44.48130278433922"
-LONGITUDE = "11.367877878271969"
+LATITUDE = "44.1111"
+LONGITUDE = "11.1111"
 
 if __name__ == '__main__':
     # Initialize the Firebase DB reference
