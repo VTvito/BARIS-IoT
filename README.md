@@ -15,12 +15,11 @@ Bnb Access Remote IoT System is a project that integrates a smart lock system co
 - **Data analysis**: Python scripts and notebooks to extract data from Firestore and generate statistics, forecasts, clustering, and other advanced analyses.
 
 ## Project Structure
-- `App/` - Flutter mobile app source code.
+- `App/baris_app` - Flutter mobile app source code.
+- `App/baris_app/assets/` - Icons, images, and Flutter graphic resources.
 - `Arduino/` - Arduino source code for the smart lock.
 - `Bridge/` - Python scripts, including the bridge (`bridge.py`).
 - `Data Analysis/` - Analysis notebooks (Jupyter).
-- `firebase_credentials/` - Firebase service account credentials file.
-- `assets/` - Icons, images, and Flutter graphic resources.
 
 ## Requirements
 - **Flutter & Dart SDK** to build the app.
