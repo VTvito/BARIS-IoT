@@ -12,6 +12,7 @@ Bnb Access Remote IoT System is a project that integrates a smart lock system co
 - **Push notifications** to admins in case of intrusion alarms, Arduino device going "offline," or lock unlock events.
 - **Arduino-Firestore state alignment**: The bridge ensures the lock's state remains synchronized.
 - **Heartbeat and offline detection**: The bridge detects if Arduino goes offline and notifies admins.
+- **GMaps APIs in App**: For geofencing in app of user during unlock; they must be within 100m from the lock.
 - **Data analysis**: Python scripts and notebooks to extract data from Firestore and generate statistics, forecasts, clustering, and other advanced analyses.
 
 ## Project Structure
@@ -28,6 +29,10 @@ Bnb Access Remote IoT System is a project that integrates a smart lock system co
   - `pandas`, `matplotlib`, `seaborn`, `scikit-learn` (for analysis and ML)
 - **Arduino IDE** to program the lock.
 - **Firebase Project** configured with Firestore, Auth, and Cloud Messaging.
+
+## How to..
+To run the project you just need to satisfy all the above requirements and create your own project on Firebase and include the .json file, then after release the .apk of app
+
 
 ![architecture](https://github.com/user-attachments/assets/5115c665-c0db-4a50-81e9-e8f2f0b23514)
 
