@@ -54,6 +54,7 @@ android/**/gradlew.bat
 android/.idea/
 android/local.properties
 android/app/*.keystore
+android/app/google-services.json
 
 # iOS
 ios/.generated/

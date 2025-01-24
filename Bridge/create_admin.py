@@ -1,34 +1,35 @@
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 
-# Percorso al file di credenziali del service account
-SERVICE_ACCOUNT_FILE = "Bridge/baris-iot-vito-firebase-adminsdk-baww0-19695e55a0.json"
+# Path to the service account credentials file
+SERVICE_ACCOUNT_FILE = "path/to/your/.json"
 
-# Inizializzazione Firebase Admin SDK
+# Initialize Firebase Admin SDK
 cred = credentials.Certificate(SERVICE_ACCOUNT_FILE)
 firebase_admin.initialize_app(cred)
 
+# Initialize Firestore client
 db = firestore.client()
 
 def create_admin_user(email, password):
-    # Crea l'utente su Firebase Auth
+    # Create the user in Firebase Auth
     user = auth.create_user(
         email=email,
         password=password
     )
-    print(f"Utente admin creato con UID: {user.uid}")
+    print(f"Admin user created with UID: {user.uid}")
 
-    # Imposta il documento dell'utente con role=admin
+    # Set the user document in Firestore with role=admin
     db.collection("users").document(user.uid).set({
         "email": email,
         "role": "admin",
-        "devices": [],   # Per ora nessun device, puoi aggiungerli successivamente
-        "fcm_tokens": []
+        "devices": [],   # Initially no devices assigned, can be added later
+        "fcm_tokens": [] # Empty list for FCM tokens
     })
-    print("Documento utente admin creato con role=admin nel database.")
+    print("Admin user document created with role=admin in the database.")
 
 if __name__ == "__main__":
-    # Dati dell'admin da creare
+    # Admin credentials to create
     email = "admin@example.com"
     password = "password123"
     create_admin_user(email, password)

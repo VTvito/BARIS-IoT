@@ -12,75 +12,93 @@ class Bridge:
         self.db = db
         self.ser = None
         self.inbuffer = b''
+
+        # Local variables to track lock/door/alarm status
         self.lock_state = True
         self.porta_aperta_state = False
         self.allarme_state = False
+
         self.name = name
         self.latitude = latitude
         self.longitude = longitude
+
+        # General control flag
         self.running = True
-        # varibili per heartbeat arduino
+
+        # Variables for Arduino heartbeat
         self.last_arduino_packet_time = time.time()
         self.arduino_offline_notified = False
 
-
-# Configura la connessione seriale con Arduino
     def setup_serial(self):
+        """
+        Initialize the serial connection with Arduino.
+        If successful, synchronize the state with Firestore.
+        """
         try:
             self.ser = serial.Serial(self.port, 9600, timeout=1)
-            # attesa per assicurare che la connessione sia avvenuta
-            time.sleep(2)
-            logging.info(f"Connesso alla porta seriale {self.port}")
+            time.sleep(2)  # small delay to ensure serial port is ready
+            logging.info(f"Connected to serial port {self.port}")
             self.sync_with_arduino()
         except serial.SerialException as e:
-            logging.error(f"Errore nella connessione seriale: {e}")
+            logging.error(f"Serial connection error: {e}")
             exit()
 
-# Riattiva la connessione seriale in caso di disconnessione -- gestisce "riconnessioni a caldo" senza riavviare il bridge.
     def reopen_serial(self):
-        # chiudi connessione attuale
+        """
+        If the serial connection drops, this method closes the current
+        port (if open) and attempts to reconnect again.
+        """
         if self.ser and self.ser.is_open:
             self.ser.close()
-        # tentativo di connessione
         try:
             self.ser = serial.Serial(self.port, 9600, timeout=1)
             time.sleep(2)
-            logging.info(f"Riconnesso alla porta seriale {self.port}")
+            logging.info(f"Reconnected to serial port {self.port}")
             self.sync_with_arduino()
         except serial.SerialException as e:
-            logging.error(f"Errore nella riconnessione seriale: {e}")
+            logging.error(f"Reconnection error: {e}")
 
-
-# Allinea lo stato di Firestore con Arduino durante l'avvio del sistema.
-# Aggiorna lo stato di blocco, allarme e inizializza Firestore se non esiste il documento associato al dispositivo.
     def sync_with_arduino(self):
-        # Legge stato da Firestore
+        """
+        Synchronize Firestore state with Arduino state when the system starts.
+        It reads the doc from Firestore:
+          - If the doc does not exist, create it with default fields.
+          - If it exists, update lat/long and check if lock or alarm states
+            differ from Arduino's default to send commands (e.g. '1' or 'A').
+
+        By default, Arduino starts with lock=true, alarm=false, door closed.
+        """
         doc_ref = self.db.collection("devices").document(self.device_id)
         doc = doc_ref.get()
         if doc.exists:
             data = doc.to_dict()
+
+            # (1) Update lat/long in Firestore, in case they've changed
+            # from the main.py config
+            doc_ref.update({
+                "latitude": float(self.latitude),
+                "longitude": float(self.longitude)
+            })
+
             desired_lock = data.get("lock", True)
             desired_allarme = data.get("allarme", False)
             
-            # Arduino appena acceso: lock=true, allarme=false di default.
+            # If Firestore says lock=false, we send '1' to unlock Arduino
             if not desired_lock:
-                logging.info("Sync: Firestore dice lock=false, invio '1' per sbloccare Arduino.")
+                logging.info("Sync: Firestore says lock=false, sending '1' to unlock on Arduino.")
                 self.ser.write("1".encode())
                 self.lock_state = False
             
-            # Se Firestore dice allarme=true, invia "A".
+            # If Firestore says allarme=true, we send 'A' to activate alarm on Arduino
             if desired_allarme:
-                logging.info("Sync: Firestore dice allarme=true, invio 'A' per attivare allarme su Arduino.")
+                logging.info("Sync: Firestore says allarme=true, sending 'A' to Arduino.")
                 self.ser.write("A".encode())
                 self.allarme_state = True
-                logging.info("Sync completata. Stato allineato secondo Firestore.")
 
-            # Porta aperta: Arduino determina lo stato dalla distanza. Firestore ne tiene solo traccia.
-            # In caso di discrepanza, ci fidiamo di Arduino, il bridge aspetta i pacchetti da Arduino per aggiornarla.
-                        
+            logging.info("Sync completed. Firestore doc existed; lat/long updated, lock/alarm checked.")
         else:
-            logging.warning("Sync: Nessun documento trovato per il dispositivo. Uso stato base.")
-            # Se non esiste il documento del device, lo inizializzo
+            # If the Firestore document doesn't exist, create it
+            logging.warning("Sync: No document found for this device. Creating it with default fields.")
             doc_ref.set({
                 "name": self.name,
                 "lock": True,
@@ -90,22 +108,27 @@ class Bridge:
                 "longitude": float(self.longitude),
                 "last_access": "Never"
             })
-            logging.info(f"Dispositivo {self.name} inizializzato in Firestore.")  
-            # Arduino è già allo stato base, niente da fare.
+            logging.info(f"Device {self.name} initialized in Firestore.")
+            # Arduino is already in the default state (lock=true, alarm=false).
             self.lock_state = True
             self.allarme_state = False
             self.porta_aperta_state = False
 
-
-# Gestisce la ricezione e il parsing dei pacchetti inviati da Arduino -- gestisto in modo async con thread separato
     def check_door_remote_thread(self):
+        """
+        This thread constantly reads from the serial port for incoming data/packets from Arduino.
+        The packets start with 0xFB and end with 0xFA, with the content in between.
+        """
         while self.running:
             try:
                 byte = self.ser.read(1)
                 if not byte:
                     continue
                 if byte != b'\xfb':
+                    # If it's not the start delimiter, ignore it
                     continue
+                
+                # Start reading payload
                 self.inbuffer = b''
 
                 while True:
@@ -113,68 +136,81 @@ class Bridge:
                     if not byte:
                         continue
                     if byte == b'\xfa':
+                        # End delimiter reached
                         break
                     self.inbuffer += byte
 
+                # Decode the message
                 try:
                     data_str = self.inbuffer.decode('utf-8').strip()
-                    logging.info(f"Pacchetto ricevuto: {data_str}")
+                    logging.info(f"Packet received: {data_str}")
                     
-                    # Ricevuto un pacchetto da Arduino - Aggiornamento heartbeat
-                    self.last_arduino_packet_time = time.time()  # Aggiorna ultimo pacchetto ricevuto
+                    # Update heartbeat
+                    self.last_arduino_packet_time = time.time()
                     if self.arduino_offline_notified:
-                        self.send_notification_to_admins("Arduino Online", f"Arduino per il device {self.name} è di nuovo online!")
-                    self.arduino_offline_notified = False  # Arduino è vivo, resetta notifica offline
+                        # If we had notified that Arduino was offline, it's now back
+                        self.send_notification_to_admins("Arduino Online", 
+                            f"Arduino for device {self.name} is back online!")
+                    self.arduino_offline_notified = False
 
+                    # Interpret the payload
                     if data_str == "001":
-                        # Porta aperta
+                        # Door opened
                         self.update_device_state(porta_aperta=True, lock=False)
                     elif data_str == "000":
-                        # Porta chiusa e serratura bloccata
+                        # Door closed & lock engaged
                         self.update_device_state(porta_aperta=False, lock=True)
                     elif data_str == "EFF":
-                        # Effrazione -> allarme attivato
+                        # Intrusion -> alarm triggered
                         self.update_alarm(True)
-                        self.send_notification_to_admins("Allarme Effrazione!", f"Effrazione rilevata su {self.name}!")
+                        self.send_notification_to_admins("Intrusion Alarm!", 
+                            f"Intrusion detected on {self.name}!")
                     elif data_str == "D":
-                        # Disattiva allarme
+                        # Disable alarm
                         self.update_alarm(False)
                     elif data_str == "NOLOCK":
-                        # Serrattura da più di 60s
-                        self.send_notification_to_admins("Serratura aperta troppo a lungo!", f"Serratura aperta a lungo Su {self.name}!")
+                        # Your custom message: "Lock not re-engaged in time"
+                        self.send_notification_to_admins("Lock remains open too long!", 
+                            f"The lock on {self.name} remained unlocked too long!")
                     elif data_str == "HB":
-                        # heartbeat
+                        # Heartbeat: do nothing except note we got a packet
                         continue
                     else:
-                        logging.error(f"Messaggio sconosciuto: {data_str}")
+                        logging.error(f"Unknown message from Arduino: {data_str}")
 
                 except UnicodeDecodeError as e:
-                    logging.error(f"Errore decodifica: {e}")
+                    logging.error(f"Decoding error: {e}")
+            
             except serial.SerialException as e:
-                logging.error(f"Errore lettura seriale: {e}")
+                logging.error(f"Serial read error: {e}")
+                # Attempt to reopen serial if disconnected
                 self.reopen_serial()
-                time.sleep(5) # attesa prima di riprovare
+                time.sleep(5)
             except Exception as e:
-                logging.error(f"Errore lettura pacchetto: {e}")
+                logging.error(f"Error reading packet: {e}")
                 time.sleep(1)
 
-
-# Monitora l'attività di Arduino tramite heartbeat e invia notifiche se non riceve pacchetti per più di 5 minuti.
     def check_arduino_offline(self):
+        """
+        Monitors whether Arduino stops sending packets for more than 5 minutes.
+        Sends a notification if it remains silent beyond this threshold.
+        """
         while self.running:
-            # Controlla ogni 60 secondi (1 minuto)
-            time.sleep(60)
+            time.sleep(60)  # check every 60 seconds
             now = time.time()
             diff = now - self.last_arduino_packet_time
-            # Soglia: 5 minuti (300 secondi)
+            # If we haven't heard from Arduino for more than 5 minutes (300 sec)
             if diff > 300 and not self.arduino_offline_notified:
-                logging.warning("Nessun pacchetto da Arduino da più di 5 minuti. Arduino offline?")
-                self.send_notification_to_admins("Arduino Offline", f"La connettività con la serratura è interrotta da + di 5 minuti per il device {self.name}.")
+                logging.warning("No packets from Arduino for more than 5 minutes. Possibly offline.")
+                self.send_notification_to_admins("Arduino Offline", 
+                    f"No packets from the lock device for over 5 minutes: {self.name}.")
                 self.arduino_offline_notified = True
 
-
-# Aggiorna lo stato della porta e della serratura su Firestore
     def update_device_state(self, porta_aperta: bool, lock: bool):
+        """
+        Updates the device state (door open/closed, lock status) in Firestore,
+        and logs the change in the access_logs sub-collection.
+        """
         timestamp = datetime.utcnow().isoformat()
         doc = self.db.collection("devices").document(self.device_id)
         doc.update({
@@ -182,23 +218,26 @@ class Bridge:
             "lock": lock,
             "last_access": timestamp
         })
-        # Aggiunge un log nella sottocollezione access_logs
-        stato_str = "porta aperta" if porta_aperta else "porta chiusa"
+
+        state_str = "porta aperta" if porta_aperta else "porta chiusa"
         doc.collection("access_logs").add({
             "timestamp": timestamp,
-            "action": stato_str,
+            "action": state_str,
             "user_id": None
         })
+
         self.lock_state = lock
         self.porta_aperta_state = porta_aperta
-        logging.info("Aggiornato Firestore con stato corrente del dispositivo.")
+        logging.info("Firestore updated with the current device state.")
 
-
-# Gestisce l'attivazione e la disattivazione dell'allarme, registrando gli eventi su Firestore.
     def update_alarm(self, stato_allarme):
+        """
+        Sets the alarm state in Firestore and logs the change in access_logs.
+        """
         timestamp = datetime.utcnow().isoformat()
         doc = self.db.collection("devices").document(self.device_id)
         doc.update({"allarme": stato_allarme})
+        
         self.allarme_state = stato_allarme
         action = "allarme_on" if stato_allarme else "allarme_off"
         doc.collection('access_logs').add({
@@ -206,50 +245,66 @@ class Bridge:
             "user_id": None,
             "action": action
         })
+
         if stato_allarme:
-            logging.warning("Allarme attivato su Firestore.")
+            logging.warning("Alarm activated in Firestore.")
         else:
-            logging.info("Allarme disattivato su Firestore.")
+            logging.info("Alarm deactivated in Firestore.")
 
-
-# Sincronizza lo stato del dispositivo leggendo modifiche su Firestore (utenti controllano il dispositivo da remoto tramite l’app)
-# Reagisce a cambiamenti dello stato della serratura o dell’allarme.
     def read_from_firebase(self):
+        """
+        Periodically called in the main loop to check if the user changed the
+        lock/alarm state in Firestore, and sends commands to Arduino accordingly.
+        """
         try:
             doc_ref = self.db.collection("devices").document(self.device_id)
             doc = doc_ref.get()
             if doc.exists:
                 data = doc.to_dict()
                 logging.info(f'Document data: {data}')
+                
                 new_lock_state = data.get("lock", True)
                 new_porta_aperta_state = data.get("porta_aperta", False)
                 new_allarme_state = data.get("allarme", False)
 
+                # If the lock state changed from what we currently have
                 if self.lock_state != new_lock_state:
                     self.lock_state = new_lock_state
                     if new_lock_state:
-                        logging.info("Invio comando blocco serratura ad Arduino.")
+                        # Firestore wants lock=true -> send "0" to Arduino
+                        logging.info("Sending lock command '0' to Arduino.")
                         self.ser.write("0".encode())
                     else:
-                        logging.info("Invio comando sblocco serratura ad Arduino.")
+                        # Firestore wants lock=false -> send "1" to Arduino
+                        logging.info("Sending unlock command '1' to Arduino.")
                         self.ser.write("1".encode())
-                        self.send_notification_to_admins("Serratura sbloccata", f"La serratura {self.name} è stata sbloccata da un utente")
+                        self.send_notification_to_admins(
+                            "Lock Unlocked",
+                            f"The lock {self.name} was unlocked by a user."
+                        )
 
-
+                # If the alarm state changed
                 if self.allarme_state and not new_allarme_state:
-                    logging.info("Disattivazione allarme da Firestore - invio comando 'D' ad Arduino.")
+                    # We have alarm active, but Firestore says alarm=false
+                    logging.info("Alarm deactivation from Firestore - sending 'D' to Arduino.")
                     self.ser.write("D".encode())
                     self.allarme_state = new_allarme_state
                 elif not self.allarme_state and new_allarme_state:
+                    # We have alarm off, but Firestore says alarm=true
                     self.allarme_state = new_allarme_state
+                    # If you want to also send a command "A" to Arduino here, you can.
+                    # It's done in sync_with_arduino or you can do it here as well if needed.
+
             else:
-                logging.warning("Nessun documento trovato per il dispositivo!")
+                logging.warning("No Firestore document found for this device!")
         except Exception as e:
-            logging.error(f"Errore nella lettura da Firestore: {e}")
+            logging.error(f"Error reading from Firestore: {e}")
 
-
-#  Invia notifiche in app agli admin in caso di eventi critici (es.: allarme attivato, serratura aperta troppo a lungo).
     def send_notification_to_admins(self, title, body):
+        """
+        Sends push notifications to all admins (users with role='admin') using FCM tokens
+        stored in 'fcm_tokens' field.
+        """
         admins = self.db.collection('users').where('role', '==', 'admin').stream()
         tokens = []
         for admin_doc in admins:
@@ -260,9 +315,10 @@ class Bridge:
         logging.info(f"Admin FCM Tokens: {tokens}")
 
         if not tokens:
-            logging.warning("Nessun token FCM trovato per gli admin.")
+            logging.warning("No FCM tokens found for admins.")
             return
 
+        # Send notifications to each token
         for token in tokens:
             message = messaging.Message(
                 notification=messaging.Notification(
@@ -273,25 +329,33 @@ class Bridge:
             )
             try:
                 response = messaging.send(message)
-                logging.info(f"Notifica inviata a {token}, risposta: {response}")
+                logging.info(f"Notification sent to {token}, response: {response}")
             except Exception as e:
-                logging.error(f"Errore nell'invio della notifica a {token}: {e}")
+                logging.error(f"Error sending notification to {token}: {e}")
 
-
-# Thread per monitoraggio stato di connettività di Arduino
     def start_offline_check_thread(self):
+        """
+        Launches a thread that periodically checks if Arduino is offline
+        (no packets received for > 5 minutes).
+        """
         offline_thread = threading.Thread(target=self.check_arduino_offline, daemon=True)
         offline_thread.start()
 
-# Thread per monitorare gli eventi remoti
     def start_remote_thread(self):
+        """
+        Launches a thread that constantly reads and interprets packets
+        from Arduino (handle door open/close, alarm triggers, etc.).
+        """
         remote_thread = threading.Thread(target=self.check_door_remote_thread, daemon=True)
         remote_thread.start()
 
-# Termina il funzionamento del bridge, chiudendo la connessione seriale.
     def stop(self):
+        """
+        Stops the main loop, closes the serial connection,
+        and sends a notification that the Bridge is stopping.
+        """
         self.running = False
         if self.ser and self.ser.is_open:
             self.ser.close()
-        self.send_notification_to_admins("Bridge stoppato", f"Bridge stoppato su {self.name}")
-        logging.info("Bridge fermato.")
+        self.send_notification_to_admins("Bridge Stopped", f"Bridge stopped on {self.name}")
+        logging.info("Bridge stopped.")

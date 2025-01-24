@@ -1,31 +1,31 @@
-# BARIS-IoT - Serratura Intelligente in Cloud
+# BARIS-IoT - Cloud-Based Smart Lock
 
-BARIS-IoT è un progetto che integra un sistema di serratura intelligente controllabile via app Flutter, con un bridge Python per la comunicazione con Arduino e l'interfaccia verso Firestore/Firebase. Il progetto include:
-- Un'app mobile Flutter per l'utente finale e per l'admin (gestione prenotazioni, stato serratura, allarme, logs).
-- Un bridge Python che comunica con Arduino via seriale e con Firestore via Admin SDK.
-- Uno script per l'analisi dati (Jupyter notebook) con possibilità di previsioni e tecniche di Machine Learning.
+BARIS-IoT is a project that integrates a smart lock system controllable via a Flutter app, with a Python bridge to communicate with Arduino and interact with Firestore/Firebase. The project includes:
+- A Flutter mobile app for end-users and admins (managing bookings, lock status, alarm, and logs).
+- A Python bridge that communicates with Arduino via serial connection and with Firestore via the Admin SDK.
+- A data analysis script (Jupyter notebook) with forecasting and Machine Learning techniques.
 
-## Funzionalità
-- **Autenticazione utenti e admin** con Firebase Auth.
-- **Prenotazioni e gestione dispositivi**: l'admin può creare prenotazioni, l'utente può sbloccare la serratura se ha una prenotazione attiva.
-- **Aggiunta utenti e visualizzazione log**: l'admin può creare nuovi utenti e visualizzare i log relativi ad aperture, allarmi ecc..
-- **Notifiche push** agli admin in caso di allarme per effrazione rilevata, dispositivo Arduino "offline", unlock serratura.
-- **Allineamento stato Arduino-Firestore**: il bridge mantiene sincronizzato lo stato della serratura.
-- **Heartbeat e offline detection**: il bridge rileva se Arduino è offline e notifica gli admin.
-- **Analisi dati**: script Python e notebook per estrarre dati da Firestore e generare statistiche, previsioni, clustering, e altre analisi avanzate.
+## Features
+- **User and admin authentication** with Firebase Auth.
+- **Booking and device management**: Admins can create bookings, and users can unlock the lock if they have an active booking.
+- **User addition and log visualization**: Admins can add new users and view logs related to unlocks, alarms, etc.
+- **Push notifications** to admins in case of intrusion alarms, Arduino device going "offline," or lock unlock events.
+- **Arduino-Firestore state alignment**: The bridge ensures the lock's state remains synchronized.
+- **Heartbeat and offline detection**: The bridge detects if Arduino goes offline and notifies admins.
+- **Data analysis**: Python scripts and notebooks to extract data from Firestore and generate statistics, forecasts, clustering, and other advanced analyses.
 
-## Struttura del Progetto
-- `App/` - Codice Flutter dell'app mobile.
-- `Arduino/` - Codice sorgente Arduino per la serratura intelligente.
-- `Bridge/` - Script Python, bridge (bridge.py)
-- `Data Analysis/` - Notebook di analisi (Jupyter).
-- `firebase_credentials/` - File di credenziali del service account Firebase.
-- `assets/` - Icone, immagini, e risorse grafiche Flutter.
+## Project Structure
+- `App/` - Flutter mobile app source code.
+- `Arduino/` - Arduino source code for the smart lock.
+- `Bridge/` - Python scripts, including the bridge (`bridge.py`).
+- `Data Analysis/` - Analysis notebooks (Jupyter).
+- `firebase_credentials/` - Firebase service account credentials file.
+- `assets/` - Icons, images, and Flutter graphic resources.
 
-## Requisiti
-- **Flutter & Dart SDK** per compilare l'app.
-- **Python 3.9+** con librerie:  
+## Requirements
+- **Flutter & Dart SDK** to build the app.
+- **Python 3.9+** with libraries:  
   - `firebase_admin`
-  - `pandas`, `matplotlib`, `seaborn`, `scikit-learn`, (per analisi e ML)
-- **Arduino IDE** per programmare la serratura.
-- **Firebase Project** con Firestore, Auth e Cloud Messaging configurati.
+  - `pandas`, `matplotlib`, `seaborn`, `scikit-learn` (for analysis and ML)
+- **Arduino IDE** to program the lock.
+- **Firebase Project** configured with Firestore, Auth, and Cloud Messaging.

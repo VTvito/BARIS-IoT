@@ -5,32 +5,46 @@ from bridge_config import init_firebase
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# parametri di configurazione passati al bridge relativi alla serratura
+# Configuration parameters for the Bridge, related to the lock device
 PORTNAME = 'COM3'
 DEVICE_ID = 'Home_77F2A2' 
-FIREBASE_CREDENTIALS = "Bridge/baris-iot-vito-firebase-adminsdk-baww0-19695e55a0.json"
+FIREBASE_CREDENTIALS = "/your/path/.json"
+
+# The new name, latitude, and longitude you want to store in Firestore
 NAME = "Home"
 LATITUDE = "44.48130278433922"
 LONGITUDE = "11.367877878271969"
 
 if __name__ == '__main__':
+    # Initialize the Firebase DB reference
     db = init_firebase(FIREBASE_CREDENTIALS)
-    bridge = Bridge(port=PORTNAME, device_id=DEVICE_ID, db=db, name=NAME, latitude=LATITUDE, longitude=LONGITUDE)
+
+    # Create a Bridge instance
+    bridge = Bridge(
+        port=PORTNAME, 
+        device_id=DEVICE_ID, 
+        db=db, 
+        name=NAME, 
+        latitude=LATITUDE, 
+        longitude=LONGITUDE
+    )
     
+    # Set up the serial connection
     bridge.setup_serial()
 
-# Avvia i thread per ascoltare i pacchetti da Arduino e monitorarne la connettività
+    # Start the thread that listens for packets from Arduino
     bridge.start_remote_thread()
+    # Start the thread that checks if Arduino is offline (heartbeat monitor)
     bridge.start_offline_check_thread()
 
-# Esegue un ciclo per leggere lo stato da Firebase limitando le richiesto ogni 2s
+    # Main loop to read device state from Firestore (polling every 2s)
     try:
         while bridge.running:
             bridge.read_from_firebase()
             time.sleep(2)
     except KeyboardInterrupt:
-        logging.info("Interrotto dall'utente.")
+        logging.info("Stopped by the user (KeyboardInterrupt).")
     except Exception as e:
-        logging.error(f"Errore nel loop principale: {e}")
+        logging.error(f"Error in the main loop: {e}")
     finally:
         bridge.stop()
