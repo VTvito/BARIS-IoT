@@ -1,4 +1,4 @@
-# BARIS-IoT - A Cloud-Based Smart Lock open for an house ecosystem
+# BARIS-IoT - A Cloud-Based Smart Lock For An House Ecosystem
 
 Bnb Access Remote IoT System is a project that integrates a smart lock system controllable via a Flutter app, with a Python bridge to communicate with Arduino and interact with Firestore/Firebase. The project includes:
 - A Flutter mobile app for end-users and admins (managing bookings, lock status, alarm, and logs).
