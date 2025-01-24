@@ -29,7 +29,6 @@ Bnb Access Remote IoT System is a project that integrates a smart lock system co
 - **Arduino IDE** to program the lock.
 - **Firebase Project** configured with Firestore, Auth, and Cloud Messaging.
 
-## Architecture
 ![architecture](https://github.com/user-attachments/assets/5115c665-c0db-4a50-81e9-e8f2f0b23514)
 
 
