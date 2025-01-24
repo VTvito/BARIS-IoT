@@ -1,6 +1,6 @@
 # BARIS-IoT - Cloud-Based Smart Lock
 
-BARIS-IoT is a project that integrates a smart lock system controllable via a Flutter app, with a Python bridge to communicate with Arduino and interact with Firestore/Firebase. The project includes:
+B&B Access Remote IoT System is a project that integrates a smart lock system controllable via a Flutter app, with a Python bridge to communicate with Arduino and interact with Firestore/Firebase. The project includes:
 - A Flutter mobile app for end-users and admins (managing bookings, lock status, alarm, and logs).
 - A Python bridge that communicates with Arduino via serial connection and with Firestore via the Admin SDK.
 - A data analysis script (Jupyter notebook) with forecasting and Machine Learning techniques.
