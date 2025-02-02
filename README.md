@@ -31,7 +31,8 @@ Bnb Access Remote IoT System is a project that integrates a smart lock system co
 - **Firebase Project** configured with Firestore, Auth, and Cloud Messaging.
 
 ## How to..
-To run the project you just need to satisfy all the above requirements and create your own project on Firebase and include the .json file, then after release the .apk of app
+To run the project you need to satisfy all the above requirements and create your own project on Firebase, and include the .json files in /app and release the .apk.
+Load the code on Arduino, connect it to the bridge (pc) and launch the python script.
 
 
 ![architecture](https://github.com/user-attachments/assets/5115c665-c0db-4a50-81e9-e8f2f0b23514)
